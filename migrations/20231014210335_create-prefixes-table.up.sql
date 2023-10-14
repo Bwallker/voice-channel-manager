@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS prefixes;
+
+CREATE TABLE prefixes (
+    id BIGINT PRIMARY KEY NOT NULL,
+    prefix TEXT NOT NULL
+);
