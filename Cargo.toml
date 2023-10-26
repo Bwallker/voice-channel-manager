@@ -8,6 +8,13 @@ edition = "2021"
 [dependencies]
 color-eyre = "0.6.2"
 dotenvy = "0.15.7"
+eyre = "0.6.8"
+serenity = "0.11.6"
+sqlx = { version = "0.7.2", features = [
+    "sqlx-postgres",
+    "postgres",
+    "runtime-tokio",
+] }
 tokio = { version = "1.33.0", features = ["rt", "rt-multi-thread", "macros"] }
 tracing = "0.1.39"
 tracing-subscriber = { version = "0.3.17", features = ["time", "env-filter"] }
