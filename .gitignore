@@ -21,3 +21,7 @@ Cargo.lock
 # Don't store .env file on github because it contains secrets.
 .env
 .vscode
+
+
+# Ignore database files
+postgres

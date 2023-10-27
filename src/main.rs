@@ -31,6 +31,10 @@ impl TypeMapKey for DefaultPrefix {
     type Value = Arc<str>;
 }
 
+pub async fn get_db_handle(ctx: &Context) -> Pool<Postgres> {
+    ctx.data.read().await.get::<DBConnection>().unwrap().clone()
+}
+
 pub fn get_client_id() -> UserId {
     static ID: OnceLock<UserId> = OnceLock::new();
     *ID.get_or_init(|| {
@@ -102,13 +106,10 @@ fn main() -> Result<()> {
 
 #[hook]
 async fn prefix_hook(ctx: &Context, message: &Message) -> Option<String> {
-    prefixes::db::get_prefix(
-        ctx.data.read().await.get::<DBConnection>().unwrap(),
-        message.guild_id.unwrap(),
-    )
-    .await
-    .wrap_err_with(|| eyre!("Retrieving server prefix failed!"))
-    .unwrap()
+    prefixes::db::get_prefix(&get_db_handle(&ctx).await, message.guild_id.unwrap())
+        .await
+        .wrap_err_with(|| eyre!("Retrieving server prefix failed!"))
+        .unwrap()
 }
 
 #[hook]

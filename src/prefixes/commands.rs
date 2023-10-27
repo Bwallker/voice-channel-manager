@@ -8,7 +8,7 @@ use serenity::framework::standard::{
     CommandResult,
 };
 
-use crate::{command_parser::parse_command, DBConnection};
+use crate::{command_parser::parse_command, DBConnection, get_db_handle};
 
 #[command]
 #[description("Changes the prefix for the server.")]
@@ -23,7 +23,7 @@ async fn change_prefix(ctx: &Context, msg: &Message) -> CommandResult {
         .get_nth_arg(0)
         .ok_or_else(|| eyre!("No prefix provided!"))?;
     super::db::set_prefix(
-        ctx.data.read().await.get::<DBConnection>().unwrap(),
+        &get_db_handle(&ctx).await,
         msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?,
         new_prefix.to_string(),
     )
@@ -34,7 +34,8 @@ async fn change_prefix(ctx: &Context, msg: &Message) -> CommandResult {
             &ctx.http,
             format!("Prefix successfully changed to {new_prefix}!"),
         )
-        .await?;
+        .await
+        .wrap_err_with(|| "Failed to send message!")?;
 
     Ok(())
 }
@@ -50,14 +51,15 @@ async fn reset_prefix(ctx: &Context, msg: &Message) -> CommandResult {
         .wrap_err_with(|| eyre!("Failed to parse change_prefix command!"))?;
 
     super::db::delete_prefix(
-        ctx.data.read().await.get::<DBConnection>().unwrap(),
+        &get_db_handle(&ctx).await,
         msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?,
     )
     .await
     .wrap_err_with(|| eyre!("Failed to reset prefix!"))?;
     msg.channel_id
         .say(&ctx.http, "Prefix successfully reset!")
-        .await?;
+        .await
+        .wrap_err_with(|| "Failed to send message!")?;
 
     Ok(())
 }

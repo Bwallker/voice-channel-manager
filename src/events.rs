@@ -6,13 +6,19 @@ use serenity::{async_trait, prelude::*};
 use sqlx::postgres::PgPoolOptions;
 use tracing::{info, info_span};
 
-use crate::{default_prefix, get_client_id, ClientID, DBConnection, DefaultPrefix};
+use voice_channels::db::TemplatedChannel;
 
-pub struct VoiceChannelManagerEventHandler;
+use crate::{
+    default_prefix, get_client_id, get_db_handle, voice_channels, ClientID, DBConnection,
+    DefaultPrefix,
+};
+
+#[non_exhaustive]
+pub struct VoiceChannelManagerEventHandler {}
 
 impl VoiceChannelManagerEventHandler {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 }
 
@@ -49,24 +55,19 @@ impl EventHandler for VoiceChannelManagerEventHandler {
             ctx: Context,
             msg: Message,
         ) {
-            let prefix = crate::prefixes::db::get_prefix(
-                ctx.data.read().await.get::<DBConnection>().unwrap(),
-                msg.guild_id.unwrap(),
-            )
-            .await
-            .wrap_err_with(|| eyre!("Retrieving server prefix failed!"))
-            .unwrap();
+            let prefix =
+                crate::prefixes::db::get_prefix(&get_db_handle(&ctx).await, msg.guild_id.unwrap())
+                    .await
+                    .wrap_err_with(|| eyre!("Retrieving server prefix failed!"))
+                    .unwrap();
             let str_ref = match prefix {
-                Some(ref prefix)  => prefix,
-                None => default_prefix()
+                Some(ref prefix) => prefix,
+                None => default_prefix(),
             };
             msg.channel_id
                 .say(
                     &ctx.http,
-                    format!(
-                        "My prefix for this server is `{}`",
-                        str_ref,
-                    ),
+                    format!("My prefix for this server is `{}`", str_ref,),
                 )
                 .await
                 .unwrap();
@@ -75,6 +76,45 @@ impl EventHandler for VoiceChannelManagerEventHandler {
             && msg.content == ctx.cache.current_user_id().mention().to_string()
         {
             mention_handler(self, ctx, msg).await;
+        }
+    }
+
+    async fn voice_state_update(&self, ctx: Context, old: Option<VoiceState>, new: VoiceState) {
+        let channel_id = new
+            .channel_id
+            .ok_or_else(|| eyre!("No channel id provided!"))
+            .unwrap();
+        let guild_id = new
+            .guild_id
+            .ok_or_else(|| eyre!("No guild id provided!"))
+            .unwrap();
+
+        let channels =
+            voice_channels::db::get_all_channels(&get_db_handle(&ctx).await, guild_id, channel_id)
+                .await
+                .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))
+                .unwrap();
+
+        for channel in channels {
+            match channel {
+                TemplatedChannel::Child(child_id) => {
+                    let channel = ctx.cache.guild_channel(child_id).ok_or_else(|| eyre!("No channel found!")).unwrap();
+
+                    voice_channels::updater::update_channel(UpdateContext {
+                        template: &channel.template,
+                        channel: &mut channel,
+                        context: &ctx,
+                        channel_number: 0,
+                        total_child_number: 0,
+                    })
+
+                    GuildChannel::from(child_id)
+                        .delete(&ctx.http)
+                        .await
+                        .wrap_err_with(|| eyre!("Deleting channel failed!"))
+                        .unwrap();
+                }
+            }
         }
     }
 }
