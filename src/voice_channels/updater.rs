@@ -4,11 +4,11 @@ use serenity::{client::Context, model::channel::GuildChannel};
 use std::fmt::Write;
 
 pub struct UpdaterContext<'template_content, 'template, 'channel, 'ctx> {
-    template: &'template Template<'template_content>,
-    channel: &'channel mut GuildChannel,
-    context: &'ctx Context,
-    channel_number: u64,
-    total_child_number: u64,
+    pub template: &'template Template<'template_content>,
+    pub channel: &'channel mut GuildChannel,
+    pub context: &'ctx Context,
+    pub channel_number: u64,
+    pub total_child_number: u64,
 }
 
 pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_, '_>) -> Result<()> {

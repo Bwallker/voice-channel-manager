@@ -97,8 +97,16 @@ pub async fn count_children<'a>(
 }
 
 pub enum TemplatedChannel {
-    Parent(ChannelId),
-    Child(ChannelId),
+    Parent {
+        parent_id: ChannelId,
+        next_child_number: u64,
+        total_children_number: u64,
+    },
+    Child {
+        child_id: ChannelId,
+        child_number: u64,
+        total_children_number: u64,
+    },
 }
 
 pub async fn get_all_channels<'a>(
@@ -107,7 +115,7 @@ pub async fn get_all_channels<'a>(
     channel_id: ChannelId,
 ) -> Result<Vec<TemplatedChannel>> {
     let res = query!(
-        "SELECT child_id, parent_id FROM child_channels WHERE guild_id = $1 AND (parent_id = $2 OR child_id = $2);",
+        "SELECT child_id, parent_id, count(parent_id), child_number FROM child_channels INNER JOIN template_channels ON parent_id = channel_id WHERE child_channels.guild_id = $1 AND (parent_id = $2 OR child_id = $2) GROUP BY child_id;",
         guild_id.0 as i64,
         channel_id.0 as i64
     )
@@ -121,10 +129,21 @@ pub async fn get_all_channels<'a>(
         .map(|row| {
             let child_id = ChannelId(row.child_id as u64);
             let parent_id = ChannelId(row.parent_id as u64);
+            let child_number = row.child_number as u64;
+            let total_children_number = row.count.unwrap_or(0) as u64;
+            let next_child_number = row.next_child_number as u64;
             if child_id == channel_id {
-                TemplatedChannel::Child(child_id)
+                TemplatedChannel::Child {
+                    child_id,
+                    child_number,
+                    total_children_number,
+                }
             } else {
-                TemplatedChannel::Parent(parent_id)
+                TemplatedChannel::Parent {
+                    parent_id,
+                    next_child_number,
+                    total_children_number,
+                }
             }
         })
         .collect())

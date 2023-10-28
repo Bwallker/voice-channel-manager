@@ -1,6 +1,6 @@
 use std::env::var;
 
-use eyre::{eyre, Context as _};
+use eyre::{eyre, WrapErr};
 use serenity::model::prelude::*;
 use serenity::{async_trait, prelude::*};
 use sqlx::postgres::PgPoolOptions;
@@ -9,7 +9,7 @@ use tracing::{info, info_span};
 use voice_channels::db::TemplatedChannel;
 
 use crate::{
-    default_prefix, get_client_id, get_db_handle, voice_channels, ClientID, DBConnection,
+    default_prefix, get_client_id, get_db_handle, voice_channels::{self, updater::UpdaterContext}, ClientID, DBConnection,
     DefaultPrefix,
 };
 
@@ -97,22 +97,31 @@ impl EventHandler for VoiceChannelManagerEventHandler {
 
         for channel in channels {
             match channel {
-                TemplatedChannel::Child(child_id) => {
+                TemplatedChannel::Child{child_id, child_number, total_children_number, template } => {
                     let channel = ctx.cache.guild_channel(child_id).ok_or_else(|| eyre!("No channel found!")).unwrap();
 
-                    voice_channels::updater::update_channel(UpdateContext {
+                    voice_channels::updater::update_channel(UpdaterContext {
                         template: &channel.template,
                         channel: &mut channel,
                         context: &ctx,
-                        channel_number: 0,
-                        total_child_number: 0,
-                    })
+                        channel_number,
+                        total_child_number,
+                    }).await.wrap_err_with(|| eyre!("Updating channel failed!")).unwrap();
 
-                    GuildChannel::from(child_id)
-                        .delete(&ctx.http)
-                        .await
-                        .wrap_err_with(|| eyre!("Deleting channel failed!"))
-                        .unwrap();
+                    
+                }
+                TemplatedChannel::Parent{parent_id, next_child_number, total_children_number } => {
+                    let channel = ctx.cache.guild_channel(parent_id).ok_or_else(|| eyre!("No channel found!")).unwrap();
+
+                    voice_channels::updater::update_channel(UpContext {
+                        template: &channel.template,
+                        channel: &mut channel,
+                        context: &ctx,
+                        channel_number: next_child_number,
+                        total_child_number,
+                    }).await.wrap_err_with(|| eyre!("Updating channel failed!")).unwrap();
+
+                    
                 }
             }
         }
