@@ -8,7 +8,7 @@ pub struct UpdaterContext<'template_content, 'template, 'channel, 'ctx> {
     pub channel: &'channel mut GuildChannel,
     pub context: &'ctx Context,
     pub channel_number: u64,
-    pub total_child_number: u64,
+    pub total_children_number: u64,
 }
 
 pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_, '_>) -> Result<()> {
@@ -20,7 +20,7 @@ pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_, '_>) -> Result<()> {
             TemplatePart::ChannelNumber => write!(new_name, "{}", ctx.channel_number)
                 .map_err(|e| eyre!(e))
                 .wrap_err_with(|| eyre!("Writing channel number into string failed!"))?,
-            TemplatePart::ChildrenInTotal => write!(new_name, "{}", ctx.total_child_number)
+            TemplatePart::ChildrenInTotal => write!(new_name, "{}", ctx.total_children_number)
                 .map_err(|e| eyre!(e))
                 .wrap_err_with(|| eyre!("Writing total child count into string failed!"))?,
         }

@@ -1,12 +1,12 @@
 use std::{
     collections::HashSet,
     env::var,
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock}, ops::DerefMut,
 };
 
 use dotenvy::dotenv;
 use eyre::{eyre, Result, WrapErr};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Acquire, PgExecutor};
 use tokio::runtime::Builder;
 use tracing::info;
 use tracing_subscriber::EnvFilter;

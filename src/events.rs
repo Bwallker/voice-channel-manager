@@ -1,6 +1,6 @@
 use std::env::var;
 
-use eyre::{eyre, WrapErr};
+use eyre::{eyre, WrapErr, Result};
 use serenity::model::prelude::*;
 use serenity::{async_trait, prelude::*};
 use sqlx::postgres::PgPoolOptions;
@@ -9,8 +9,9 @@ use tracing::{info, info_span};
 use voice_channels::db::TemplatedChannel;
 
 use crate::{
-    default_prefix, get_client_id, get_db_handle, voice_channels::{self, updater::UpdaterContext}, ClientID, DBConnection,
-    DefaultPrefix,
+    default_prefix, get_client_id, get_db_handle,
+    voice_channels::{self, parser::parse_template, updater::UpdaterContext},
+    ClientID, DBConnection, DefaultPrefix,
 };
 
 #[non_exhaustive]
@@ -22,6 +23,38 @@ impl VoiceChannelManagerEventHandler {
     }
 }
 
+enum ParsedVoiceStateEvent {
+    JoinedChannel {
+        old: Option<VoiceState>,
+        new: VoiceState,
+        joined_channel_id: ChannelId,
+        member: Member,
+    }
+    LeftChannel {
+        old: VoiceState,
+        new: Option<VoiceState>,
+        left_channel_id: ChannelId,
+        member: Member,
+    }
+}
+
+fn parse_voice_event(ctx: Context, old: Option<VoiceState>, new: VoiceState) -> Result<ParsedVoiceStateEvent> {
+    let member = new.member;
+    let (old_channel_id, new_channel_id) = match (old.channel_id, new.channel_id) {
+        (None, None) => return Err(eyre!("Both new and old channel id were null")),
+        (Some(old), None) => 
+
+    }
+    let channel_id = new
+            .channel_id
+            .ok_or_else(|| eyre!("No channel id provided!"))
+            .unwrap();
+        let guild_id = new
+            .guild_id
+            .ok_or_else(|| eyre!("No guild id provided!"))
+            .unwrap();
+
+}
 #[async_trait]
 impl EventHandler for VoiceChannelManagerEventHandler {
     async fn ready(&self, ctx: Context, ready: Ready) {
@@ -89,6 +122,8 @@ impl EventHandler for VoiceChannelManagerEventHandler {
             .ok_or_else(|| eyre!("No guild id provided!"))
             .unwrap();
 
+        
+
         let channels =
             voice_channels::db::get_all_channels(&get_db_handle(&ctx).await, guild_id, channel_id)
                 .await
@@ -97,21 +132,40 @@ impl EventHandler for VoiceChannelManagerEventHandler {
 
         for channel in channels {
             match channel {
-                TemplatedChannel::Child{child_id, child_number, total_children_number, template } => {
-                    let channel = ctx.cache.guild_channel(child_id).ok_or_else(|| eyre!("No channel found!")).unwrap();
+                TemplatedChannel::Child {
+                    child_id,
+                    child_number,
+                    total_children_number,
+                    template,
+                } => {
+                    let channel = ctx
+                        .cache
+                        .guild_channel(child_id)
+                        .ok_or_else(|| eyre!("No channel found!"))
+                        .unwrap();
 
                     voice_channels::updater::update_channel(UpdaterContext {
-                        template: &channel.template,
+                        template: &parse_template(&template).wrap_err_with(|| eyre!("Parsing template received from database failed!")).unwrap(),
                         channel: &mut channel,
                         context: &ctx,
-                        channel_number,
-                        total_child_number,
-                    }).await.wrap_err_with(|| eyre!("Updating channel failed!")).unwrap();
-
-                    
+                        channel_number: child_number,
+                        total_children_number,
+                    })
+                    .await
+                    .wrap_err_with(|| eyre!("Updating channel failed!"))
+                    .unwrap();
                 }
-                TemplatedChannel::Parent{parent_id, next_child_number, total_children_number } => {
-                    let channel = ctx.cache.guild_channel(parent_id).ok_or_else(|| eyre!("No channel found!")).unwrap();
+                TemplatedChannel::Parent {
+                    parent_id,
+                    next_child_number,
+                    total_children_number,
+                    template,
+                } => {
+                    let channel = ctx
+                        .cache
+                        .guild_channel(parent_id)
+                        .ok_or_else(|| eyre!("No channel found!"))
+                        .unwrap();
 
                     voice_channels::updater::update_channel(UpContext {
                         template: &channel.template,
@@ -119,9 +173,10 @@ impl EventHandler for VoiceChannelManagerEventHandler {
                         context: &ctx,
                         channel_number: next_child_number,
                         total_child_number,
-                    }).await.wrap_err_with(|| eyre!("Updating channel failed!")).unwrap();
-
-                    
+                    })
+                    .await
+                    .wrap_err_with(|| eyre!("Updating channel failed!"))
+                    .unwrap();
                 }
             }
         }

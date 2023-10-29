@@ -4,10 +4,10 @@ use serenity::prelude::*;
 use serenity::model::id::GuildId;
 
 use eyre::{eyre, Context, Result};
-use sqlx::{postgres::PgExecutor, query};
+use sqlx::{query, Pool, Postgres};
 
 pub async fn get_prefix<'a>(
-    executor: impl PgExecutor<'a>,
+    executor: &Pool<Postgres>,
     guild_id: GuildId,
 ) -> Result<Option<String>> {
     query!(
@@ -21,7 +21,7 @@ pub async fn get_prefix<'a>(
 }
 
 pub async fn set_prefix<'a>(
-    executor: impl PgExecutor<'a>,
+    executor: &Pool<Postgres>,
     guild_id: GuildId,
     prefix: String,
 ) -> Result<()> {
@@ -32,7 +32,7 @@ pub async fn set_prefix<'a>(
     ).execute(executor).await.wrap_err_with(|| eyre!("Setting prefix in database for server with id {guild_id} failed!")).map(|_| ())
 }
 
-pub async fn delete_prefix<'a>(executor: impl PgExecutor<'a>, guild_id: GuildId) -> Result<()> {
+pub async fn delete_prefix<'a>(executor: &Pool<Postgres>, guild_id: GuildId) -> Result<()> {
     query!(
         "DELETE FROM prefixes WHERE guild_id = $1;",
         guild_id.0 as i64
