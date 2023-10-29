@@ -92,13 +92,14 @@ impl<'a> Parser<'a> {
             ));
         }
         Ok(content)
-        
     }
 
     fn parse_template_content(&mut self) -> Result<TemplatePart<'static>> {
         Ok(match self.current_byte().ok_or_else(|| eyre!("Unexpected end of input at {}:{}. Reached end of input while trying to parse template content.", self.current_col, self.current_row))? {
             b'#' => TemplatePart::ChannelNumber,
             b'%' => TemplatePart::ChildrenInTotal,
+            b'?' => TemplatePart::ConnectedUsersNumber,
+            b'c' => TemplatePart::ConnectedUserCapacity,
             _ => return Err(eyre!(
                 "Invalid template content at {}:{}. Expected one of '#', '%', but found '{}'",
                 self.current_col,
@@ -112,6 +113,8 @@ impl<'a> Parser<'a> {
 pub enum TemplatePart<'a> {
     ChannelNumber,
     ChildrenInTotal,
+    ConnectedUsersNumber,
+    ConnectedUserCapacity,
     String(&'a str),
 }
 
@@ -120,6 +123,6 @@ pub struct Template<'a> {
     pub parts: Vec<TemplatePart<'a>>,
 }
 
-pub fn parse_template(template: & str) -> Result<Template> {
+pub fn parse_template(template: &str) -> Result<Template> {
     Parser::new(template).parse()
 }

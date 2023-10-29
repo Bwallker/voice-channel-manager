@@ -9,6 +9,8 @@ pub struct UpdaterContext<'template_content, 'template, 'channel, 'ctx> {
     pub context: &'ctx Context,
     pub channel_number: u64,
     pub total_children_number: u64,
+    pub users_connected_number: u64,
+    pub users_connected_capacity: u64,
 }
 
 pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_, '_>) -> Result<()> {
@@ -23,6 +25,12 @@ pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_, '_>) -> Result<()> {
             TemplatePart::ChildrenInTotal => write!(new_name, "{}", ctx.total_children_number)
                 .map_err(|e| eyre!(e))
                 .wrap_err_with(|| eyre!("Writing total child count into string failed!"))?,
+            TemplatePart::ConnectedUsersNumber => write!(new_name, "{}", ctx.users_connected_number)
+                .map_err(|e| eyre!(e))
+                .wrap_err_with(|| eyre!("Writing connected users count into string failed!"))?,
+            TemplatePart::ConnectedUserCapacity => write!(new_name, "{}", ctx.users_connected_capacity)
+                .map_err(|e| eyre!(e))
+                .wrap_err_with(|| eyre!("Writing connected users capacity into string failed!"))?,
         }
     }
 
