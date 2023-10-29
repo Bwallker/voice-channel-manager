@@ -8,7 +8,7 @@ use serenity::framework::standard::{
     CommandResult,
 };
 
-use crate::{command_parser::parse_command, DBConnection, get_db_handle};
+use crate::{command_parser::parse_command, get_db_handle, DBConnection};
 
 #[command]
 #[description("Changes the prefix for the server.")]
@@ -42,8 +42,8 @@ async fn change_prefix(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[description("Resets the prefix to the default value for the server.")]
-#[usage("<prefix>/change_prefix <new prefix>")]
-#[example("vc/change_prefix !")]
+#[usage("<prefix>/reset_prefix")]
+#[example("vc/reset_prefix")]
 #[num_args(0)]
 #[required_permissions("MANAGE_GUILD")]
 async fn reset_prefix(ctx: &Context, msg: &Message) -> CommandResult {
