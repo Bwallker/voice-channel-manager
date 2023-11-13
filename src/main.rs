@@ -159,8 +159,7 @@ async fn on_dispatch_error_hook(
 ) {
     info!("Dispatch error: {error:#?}");
     let to_send = match error {
-        DispatchError::CheckFailed(check_name, reason) => 
-            format!("Running command `{command}` failed!. Check `{check_name}` rejected you with reason: `{reason}`"),
+        DispatchError::CheckFailed(check_name, reason) => format!("Running command `{command}` failed!. Check `{check_name}` rejected you with reason: `{reason}`"),
         DispatchError::Ratelimited(info) => format!("You've been ratelimited and are unable to send commands!: details: `{info:#?}`"),
         DispatchError::CommandDisabled => format!("The command `{command}` has been disabled!"),
         DispatchError::BlockedUser => "You've been blocked from using commands!".to_string(),
