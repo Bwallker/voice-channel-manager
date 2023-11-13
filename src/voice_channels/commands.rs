@@ -1,6 +1,7 @@
-use serenity::json::JsonMap;
+use color_eyre::Section;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
+use serenity::{framework::standard::Args, json::JsonMap};
 
 use eyre::{eyre, WrapErr};
 
@@ -11,32 +12,39 @@ use serenity::framework::standard::{
     CommandResult,
 };
 use sqlx::types::JsonValue;
+#[allow(unused_imports)]
+use tracing::{debug, info, trace, trace_span};
 
-use crate::{command_parser::parse_command, get_db_handle};
+use crate::{events::delete_parent_and_children, get_db_handle, GuildChannels};
 
 #[command]
 #[description("Alters the template for a template channel.")]
-#[usage("<prefix>/alter_channel <channel id> <new template>")]
-#[example("vc/alter_channel 123456789 \"Gaming channel number {#}\"")]
+#[usage("<prefix>/alter_template <channel id> <new template>")]
+#[example("vc/alter_template 123456789 \"Gaming channel number {#}#\"")]
+#[only_in(guild)]
 #[num_args(2)]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn alter_channel(ctx: &Context, msg: &Message) -> CommandResult {
-    let command = parse_command(ctx, msg)
-        .wrap_err_with(|| eyre!("Failed to parse alter_channel command!"))?;
-    let channel_id = command
-        .get_nth_arg(0)
-        .ok_or_else(|| eyre!("No channel id provided!"))?;
-    let new_template = command
-        .get_nth_arg(1)
+async fn alter_template(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    args.trimmed().quoted();
+    let channel_id = args
+        .parse::<ChannelId>()
+        .wrap_err_with(|| eyre!("Failed to parse channel id!"))
+        .suggestion("Channel ID must be a valid integer.")?;
+    args.advance();
+    let mut new_template = args
+        .current()
         .ok_or_else(|| eyre!("No template provided!"))?;
+    if new_template.as_bytes()[0] == b'"' {
+        new_template = &new_template[1..];
+    }
+    if new_template.as_bytes()[new_template.len() - 1] == b'"' {
+        new_template = &new_template[..new_template.len() - 1];
+    }
 
+    info!("New template: {new_template}!");
     super::db::set_template(
-        &get_db_handle(&ctx).await,
-        ChannelId(
-            channel_id
-                .parse::<u64>()
-                .wrap_err_with(|| eyre!("Failed to parse channel id!"))?,
-        ),
+        &get_db_handle(ctx).await,
+        channel_id,
         msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?,
         new_template.to_string(),
     )
@@ -45,7 +53,10 @@ async fn alter_channel(ctx: &Context, msg: &Message) -> CommandResult {
     msg.channel_id
         .say(
             &ctx.http,
-            format!("Template successfully changed to `{new_template}`!"),
+            format!(
+                "{}: Template successfully changed to `{new_template}`!",
+                msg.author.mention()
+            ),
         )
         .await
         .wrap_err_with(|| "Failed to send message!")?;
@@ -56,20 +67,26 @@ async fn alter_channel(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[description("Creates a new template channel with a name and a template.")]
 #[usage("<prefix>/create_channel <channel name> <template>")]
-#[example("vc/create_channel \"Create a gaming channel!\" \"Gaming channel number {#}\"")]
+#[example("vc/create_channel \"Create a gaming channel!\" \"Gaming channel number {#}#\"")]
+#[only_in(guild)]
 #[num_args(2)]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn create_channel(ctx: &Context, msg: &Message) -> CommandResult {
-    let command = parse_command(ctx, msg)
-        .wrap_err_with(|| eyre!("Failed to parse create_channel command!"))?;
+async fn create_channel(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    args.trimmed().quoted();
+    let span = trace_span!("create_channel span");
+    let _guard = span.enter();
+    trace!("Entered create_channel!");
+    let channel_name = args
+        .single_quoted::<String>()
+        .wrap_err_with(|| eyre!("No channel name provided!"))?;
+    trace!("Channel name: {}!", channel_name);
 
-    let channel_name = command
-        .get_nth_arg(0)
-        .ok_or_else(|| eyre!("No channel name provided!"))?;
-
-    let template = command
-        .get_nth_arg(1)
+    let template = args
+        .quoted()
+        .current()
         .ok_or_else(|| eyre!("No template provided!"))?;
+
+    trace!("Template: {}!", template);
     let mut options = JsonMap::new();
     options.insert(
         "name".to_string(),
@@ -89,7 +106,7 @@ async fn create_channel(ctx: &Context, msg: &Message) -> CommandResult {
         .wrap_err_with(|| eyre!("Failed to create voice channel!"))?;
 
     super::db::set_template(
-        &get_db_handle(&ctx).await,
+        &get_db_handle(ctx).await,
         channel.id,
         msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?,
         template.to_string(),
@@ -97,51 +114,97 @@ async fn create_channel(ctx: &Context, msg: &Message) -> CommandResult {
     .await
     .wrap_err_with(|| eyre!("Failed to create template!"))?;
     msg.channel_id
-        .say(&ctx.http, format!("Channel successfully created with name `{channel_name}` and template `{template}`!"))
+        .say(&ctx.http, format!("{}: Channel successfully created with name `{channel_name}` and template `{template}`!", msg.author.mention()))
         .await.wrap_err_with(|| "Failed to send message!")?;
 
     Ok(())
 }
 
 #[command]
-#[description("Deletes a template channel .")]
+#[description("Deletes a template channel.")]
 #[usage("<prefix>/delete_channel <channel id>")]
 #[example("vc/delete_channel 1234567890")]
+#[aliases("remove_channel")]
+#[only_in(guild)]
 #[num_args(1)]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn delete_channel(ctx: &Context, msg: &Message) -> CommandResult {
-    let command = parse_command(ctx, msg)
-        .wrap_err_with(|| eyre!("Failed to parse delete_channel command!"))?;
-    let channel_id = command
-        .get_nth_arg(0)
-        .ok_or_else(|| eyre!("No channel id provided!"))?;
+async fn delete_channel(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    args.trimmed().quoted();
+    let channel_id = args
+        .single_quoted::<ChannelId>()
+        .wrap_err_with(|| eyre!("Failed to parse channel id!"))
+        .suggestion("Channel ID must be a valid integer.")?;
 
-    ctx.http
-        .delete_channel(
-            ChannelId(
-                channel_id
-                    .parse::<u64>()
-                    .wrap_err_with(|| eyre!("Failed to parse channel id!"))?,
-            )
-            .0,
-        )
+    let guild_id = msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?;
+
+    let guild_channels_map = ctx
+        .data
+        .read()
         .await
-        .wrap_err_with(|| eyre!("Failed to delete channel!"))?;
-    super::db::delete_template(
-        &get_db_handle(&ctx).await,
-        msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?,
-    )
-    .await
-    .wrap_err_with(|| eyre!("Failed to delete template!"))?;
+        .get::<GuildChannels>()
+        .unwrap()
+        .clone();
+
+    let guild_map = guild_channels_map
+        .get(&guild_id)
+        .ok_or_else(|| eyre!("No entry for guild ID {guild_id} in guild_channels_map"))?;
+
+    let (parent, children) = guild_map
+        .get_key_value(&channel_id.into())
+        .ok_or_else(|| eyre!("No entry for channel ID {channel_id} in guild_map"))?;
+
+    delete_parent_and_children(ctx, guild_id, parent, children).await?;
 
     msg.channel_id
-        .say(&ctx.http, "Channel successfully deleted!")
+        .say(
+            &ctx.http,
+            format!("{}: Channel successfully deleted!", msg.author.mention()),
+        )
         .await
         .wrap_err_with(|| "Failed to send message!")?;
 
     Ok(())
 }
 
+#[command]
+#[description("Changes the capacity for generated channels for a template channel.")]
+#[usage("<prefix>/change_capacity <channel id> <capacity>")]
+#[example("vc/change_capacity 1234567890 42")]
+#[aliases("change_cap")]
+#[only_in(guild)]
+#[num_args(2)]
+#[required_permissions("MANAGE_CHANNELS")]
+async fn change_capacity(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    args.trimmed().quoted();
+    let channel_id = args.single_quoted::<ChannelId>().wrap_err_with(|| {
+        eyre!("Failed to parse channel id!").suggestion("Channel ID must be a valid integer.")
+    })?;
+    let capacity = args
+        .single_quoted::<u64>()
+        .wrap_err_with(|| eyre!("Failed to parse channel capacity!"))
+        .suggestion("Channel capacity must be a valid integer.")?;
+    let guild_id = msg
+        .guild_id
+        .ok_or_else(|| eyre!("Guild ID was missing!. This should be impossible!"))?;
+
+    super::db::change_capacity(&get_db_handle(ctx).await, guild_id, channel_id, capacity)
+        .await
+        .wrap_err_with(|| eyre!("Failed at changing capacity!"))?;
+
+    msg.channel_id
+        .say(
+            &ctx.http,
+            format!(
+                "{} - Successfully changed capacity to {capacity}!",
+                msg.author.mention()
+            ),
+        )
+        .await
+        .wrap_err_with(|| eyre!("Failed to send message!"))?;
+    info!("Changed capacity for channel with ID {channel_id} to {capacity}!");
+    Ok(())
+}
+
 #[group("Template channels")]
-#[commands(alter_channel, create_channel, delete_channel)]
+#[commands(alter_template, create_channel, delete_channel, change_capacity)]
 struct TemplateChannels;

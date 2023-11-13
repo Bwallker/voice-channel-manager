@@ -4,4 +4,4 @@ CREATE TABLE prefixes (
     prefix TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX prefix_index ON prefixes (prefix);
+CREATE INDEX prefix_index ON prefixes (prefix);

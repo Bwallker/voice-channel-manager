@@ -4,7 +4,8 @@ CREATE TABLE template_channels (
     channel_id BIGINT PRIMARY KEY NOT NULL,
     guild_id BIGINT NOT NULL,
     channel_template TEXT NOT NULL,
-    next_child_number BIGINT NOT NULL
+    next_child_number BIGINT NOT NULL,
+    capacity BIGINT
 );
 
 CREATE UNIQUE INDEX template_channel_id_index ON template_channels (channel_id);
