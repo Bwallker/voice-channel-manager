@@ -1,16 +1,14 @@
 use std::{
-    collections::HashSet,
+    collections::HashSet as SlowSet,
     env::var,
-    hash::BuildHasherDefault,
     sync::{Arc, OnceLock},
 };
 
 pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
-pub type DashMap<K, V> = dashmap::DashMap<K, V, BuildHasherDefault<FxHasher>>;
+pub type HashSet<K> = rustc_hash::FxHashSet<K>;
 
 use dotenvy::dotenv;
 use eyre::{eyre, Report, Result, WrapErr};
-use rustc_hash::FxHasher;
 use sqlx::{Pool, Postgres};
 use tokio::{runtime::Builder, task::JoinHandle};
 #[allow(unused_imports)]
@@ -18,6 +16,7 @@ use tracing::{debug, error, event, info, trace, warn, Level};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::FmtSubscriber;
+
 struct DBConnection;
 
 impl TypeMapKey for DBConnection {
@@ -39,13 +38,13 @@ impl TypeMapKey for DefaultPrefix {
 struct GuildChannels;
 
 impl TypeMapKey for GuildChannels {
-    type Value = Arc<DashMap<GuildId, DashMap<Parent, Children>>>;
+    type Value = Arc<RwLock<HashMap<GuildId, Arc<RwLock<HashMap<Parent, Children>>>>>>;
 }
 
 struct GuildHandles;
 
 impl TypeMapKey for GuildHandles {
-    type Value = Arc<DashMap<GuildId, JoinHandle<Report>>>;
+    type Value = Arc<Mutex<HashMap<GuildId, JoinHandle<Report>>>>;
 }
 
 pub async fn get_db_handle(ctx: &Context) -> Pool<Postgres> {
@@ -95,6 +94,7 @@ use voice_channels::db::{Children, Parent};
 mod events;
 mod prefixes;
 mod voice_channels;
+mod util;
 
 fn main() -> Result<()> {
     color_eyre::install().expect("Installing color_eyre to not fail.");
@@ -226,7 +226,7 @@ async fn help_handler(
     args: Args,
     help_options: &'static HelpOptions,
     groups: &[&'static CommandGroup],
-    owners: HashSet<UserId>,
+    owners: SlowSet<UserId>,
 ) -> CommandResult {
     let _ = with_embeds(context, msg, args, help_options, groups, owners).await?;
     Ok(())

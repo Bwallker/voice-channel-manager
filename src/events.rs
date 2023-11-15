@@ -1,9 +1,8 @@
-use crate::DashMap;
+use crate::{voice_channels::db::Children, HashMap, util::get_value};
 use eyre::{eyre, Report, Result, WrapErr};
 use if_chain::if_chain;
 use serde_json::Map;
-use serenity::model::prelude::*;
-use serenity::{async_trait, prelude::*};
+use serenity::{async_trait, prelude::*, model::prelude::*};
 use sqlx::{postgres::PgPoolOptions, query, Pool, Postgres};
 use std::{borrow::Cow, env::var, sync::Arc, time::Duration};
 use tokio::{task, time::sleep};
@@ -21,7 +20,7 @@ use crate::{
 
 const UPDATE_INTERVAL: Duration = Duration::from_secs(3);
 
-async fn update_guild(_ctx: Context, guild_id: GuildId) -> Report {
+async fn update_guild(ctx: Context, guild_id: GuildId) -> Report {
     macro_rules! bail {
         ($e: expr) => {
             match $e {
@@ -31,42 +30,74 @@ async fn update_guild(_ctx: Context, guild_id: GuildId) -> Report {
         };
     }
     let span = debug_span!("Guild updater");
-    let guild_channel_map = _ctx
-        .data
-        .read()
-        .await
-        .get::<GuildChannels>()
-        .unwrap()
-        .clone();
+    let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
+
+    let guild_map = {
+        let lock = guild_channels_map.read().await;
+        lock.get(&guild_id).unwrap().clone()
+    };
+    
     loop {
         sleep(UPDATE_INTERVAL).await;
+        
         span.in_scope(|| debug!("Performing update for guild {guild_id}!"));
-        let guild_map = guild_channel_map.get(&guild_id).unwrap();
-        for r#ref in guild_map.value().iter() {
-            let children = r#ref.value();
+        {
+            let lock = guild_channels_map.read().await;
+            let _guard = span.enter();
+            debug!("Guild channel map: {lock:?}");
+        }
+
+        span.in_scope(|| debug!("Guild map: {:?}", guild_map));
+
+        let lock = guild_map.read().await;
+        
+        for children in lock.values() {
             span.in_scope(|| debug!("Updating children: {children:#?}"));
+
             for child in children {
                 span.in_scope(|| debug!("Updating child: {child:#?}"));
-                let mut channel = bail!(_ctx
+                let mut channel = bail!(ctx
                     .cache
                     .guild_channel(child.child_id)
                     .ok_or_else(|| eyre!("No channel found!")));
                 let channel_id = channel.id;
+                let users_connected_number = bail!(channel
+                    .members(&ctx.cache)
+                    .await
+                    .wrap_err_with(|| eyre!("Could not retrieve channel members from cache!")))
+                .len() as u64;
+                if users_connected_number == 0 {
+                    let c = bail!(bail!(channel_id
+                        .delete(&ctx.http)
+                        .await
+                        .wrap_err_with(|| eyre!("Deleting inactive child channel failed!"))).guild().ok_or_else(|| eyre!("Deleted child channel was not a guild channel! This should be completely impossible!")));
+                    bail!(voice_channels::db::delete_child(
+                        &get_db_handle(&ctx).await,
+                        guild_id,
+                        child.parent_id,
+                        channel_id,
+                    )
+                    .await
+                    .wrap_err_with(|| {
+                        eyre!("Deleting inactive child channel from database failed!")
+                    }));
+                    debug!(
+                        "Finished deleting inactive child channel with name {}!",
+                        c.name()
+                    );
+                    continue;
+                }
                 let template = bail!(parse_template(&child.template)
                     .wrap_err_with(|| eyre!("Parsing template received from database failed!")));
                 bail!(voice_channels::updater::update_channel(UpdaterContext {
                     template: &template,
-                    context: &_ctx,
+                    context: &ctx,
                     channel_number: child.child_number,
                     total_children_number: child.total_children_number,
                     users_connected_capacity: bail!(channel.user_limit.ok_or_else(|| {
                         eyre!("No user limit provided for channel with id {channel_id}!")
                     })),
-                    users_connected_number: bail!(channel
-                        .members(&_ctx.cache)
-                        .await
-                        .wrap_err_with(|| eyre!("Could not retrieve channel members from cache!")))
-                    .len() as u64,
+                    users_connected_number,
                     channel: &mut channel,
                 })
                 .await
@@ -83,7 +114,7 @@ pub async fn delete_parent_and_children(
     ctx: &Context,
     guild_id: GuildId,
     parent: &Parent,
-    children: &[Child],
+    children: &Children,
 ) -> Result<()> {
     ctx.http
         .delete_channel(parent.parent_id.0)
@@ -164,7 +195,7 @@ impl VoiceChannelManagerEventHandler {
     async fn ready(&self, ctx: Context, ready: &Ready) -> Result<()> {
         let ready_span = info_span!("Ready Span");
         ready_span.in_scope(|| info!("{} is connected!", ready.user.name));
-        
+
         let mut lock = ctx.data.write().await;
         lock.insert::<DBConnection>(
             PgPoolOptions::new()
@@ -179,31 +210,40 @@ impl VoiceChannelManagerEventHandler {
         );
         lock.insert::<ClientID>(get_client_id());
         lock.insert::<DefaultPrefix>(default_prefix().into());
-        lock.insert::<GuildHandles>(Arc::new(DashMap::default()));
-        lock.insert::<GuildChannels>(Arc::new(DashMap::default()));
+        lock.insert::<GuildHandles>(Arc::new(Mutex::new(HashMap::default())));
+        lock.insert::<GuildChannels>(Arc::new(RwLock::new(HashMap::default())));
+
         let guild_handles_map = lock.get::<GuildHandles>().unwrap().clone();
         let guild_channels_map = lock.get::<GuildChannels>().unwrap().clone();
+
+        let mut guild_handles_lock = guild_handles_map.lock().await;
+        let mut guild_channels_lock = guild_channels_map.write().await;
+
         let activity = Some(Activity::watching("you sleep"));
         ctx.shard.set_presence(activity, OnlineStatus::Online);
-        let connection = lock.get::<DBConnection>().unwrap();
+        let connection = lock.get::<DBConnection>().unwrap().clone();
         for guild in &ready.guilds {
             let guild_id = guild.id;
             let context = ctx.clone();
             let handle = task::spawn(update_guild(context, guild_id));
-            guild_handles_map.insert(guild_id, handle);
+            guild_handles_lock.insert(guild_id, handle);
 
-            let all_channels = voice_channels::db::get_all_channels_in_guild(connection, guild_id)
+            let all_channels = voice_channels::db::get_all_channels_in_guild(&connection, guild_id)
                 .await
                 .wrap_err_with(|| {
                     eyre!("Retrieving voice channels failed in guild `{guild_id}`!")
                 })?;
-            guild_channels_map.insert(guild_id, all_channels);
+            debug!("All channels for guild: {guild_id}: {all_channels:?}");
+            guild_channels_lock.insert(guild_id, Arc::new(RwLock::new(all_channels)));
+            debug!("Guild channels after insert: {guild_channels_lock:?}");
         }
-
+        
+        debug!("Finished initializing all guilds!");
+        debug!("Guild channels after initialization: {guild_channels_lock:#?}");
         ready_span.in_scope(|| info!("Preceding to remove all inactive guilds"));
 
         clean_inactive_guilds_from_db(
-            connection,
+            &connection,
             &ready
                 .guilds
                 .iter()
@@ -254,7 +294,8 @@ impl VoiceChannelManagerEventHandler {
             channel_id,
         )
         .await
-        .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))? else {
+        .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))?
+        else {
             return Err(eyre!("No parent found!"));
         };
         info!("Parent: {:?}, children: {:?}", parent, children);
@@ -303,24 +344,23 @@ impl VoiceChannelManagerEventHandler {
             .wrap_err_with(|| {
                 eyre!("Registering child channel in database for server with id {guild_id} failed!")
             })?;
-
-            let guild_channels_map = ctx
-                .data
-                .read()
-                .await
-                .get::<GuildChannels>()
-                .unwrap()
-                .clone();
-
-            let map = guild_channels_map.get_mut(&guild_id).unwrap();
-            map.entry(parent.clone()).or_default().push(Child {
+            let map = {
+                let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
+                let lock = guild_channels_map.read().await;
+                lock.get(&guild_id).unwrap().clone()
+            };
+            
+            let mut map_lock = map.write().await;
+            
+            map_lock.entry(parent.clone()).or_default().insert(Child {
                 child_id: new.id,
                 child_number: total_children_number,
                 total_children_number,
                 template: parent.template.clone(),
+                parent_id: parent.parent_id,
             });
+            drop(map_lock);
             drop(map);
-            drop(guild_channels_map);
 
             voice_channels::updater::update_channel(UpdaterContext {
                 template: &parse_template(&parent.template)
@@ -340,6 +380,12 @@ impl VoiceChannelManagerEventHandler {
             })
             .await
             .wrap_err_with(|| eyre!("Updating channel failed!"))?;
+
+            parsed_event
+                .member()
+                .move_to_voice_channel(&ctx.http, new.id)
+                .await
+                .wrap_err_with(|| eyre!("Moving member to new channel failed!"))?;
         }
 
         for Child {
@@ -347,6 +393,7 @@ impl VoiceChannelManagerEventHandler {
             child_number,
             total_children_number,
             template,
+            parent_id: _,
         } in children
         {
             let mut channel = ctx
@@ -416,17 +463,14 @@ impl VoiceChannelManagerEventHandler {
     }
 
     async fn on_guild_join(&self, ctx: Context, guild: Guild) -> Result<()> {
-        let guild_task_map = ctx.data.read().await.get::<GuildHandles>().unwrap().clone();
-        let guild_channels_map = ctx
-            .data
-            .read()
-            .await
-            .get::<GuildChannels>()
-            .unwrap()
-            .clone();
-        guild_channels_map.insert(guild.id, DashMap::default());
+        let guild_task_map = get_value::<GuildHandles>(&ctx.data).await;
+        let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
+        let mut guild_channels_lock = guild_channels_map.write().await;
+        guild_channels_lock.insert(guild.id, Arc::new(RwLock::new(HashMap::default())));
+        drop(guild_channels_lock);
         let handle = task::spawn(update_guild(ctx.clone(), guild.id));
-        guild_task_map.insert(guild.id, handle);
+        let mut guild_task_lock = guild_task_map.lock().await;
+        guild_task_lock.insert(guild.id, handle);
         Ok(())
     }
 
@@ -436,11 +480,12 @@ impl VoiceChannelManagerEventHandler {
         guild_id: GuildId,
         _guild: Option<Guild>,
     ) -> Result<()> {
-        let guild_task_map = ctx.data.read().await.get::<GuildHandles>().unwrap().clone();
-        let handle = guild_task_map
+        let guild_task_map = get_value::<GuildHandles>(&ctx.data).await;
+        let mut guild_task_lock = guild_task_map.lock().await;
+        let handle = guild_task_lock
             .remove(&guild_id)
-            .ok_or_else(|| eyre!("No guild handle found!"))?
-            .1;
+            .ok_or_else(|| eyre!("No guild handle found!"))?;
+        drop(guild_task_lock);
         handle.abort();
         match handle.await {
             Ok(err) => Err(err.wrap_err("Guild task returned an error!")),
@@ -471,14 +516,9 @@ impl VoiceChannelManagerEventHandler {
             .await
             .wrap_err_with(|| eyre!("Cleaning guild with ID `{guild_id}` from database failed!"))?;
 
-        let guild_channels_map = ctx
-            .data
-            .read()
-            .await
-            .get::<GuildChannels>()
-            .unwrap()
-            .clone();
-        guild_channels_map.remove(&guild_id);
+        let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
+        let mut guild_channels_lock = guild_channels_map.write().await;
+        guild_channels_lock.remove(&guild_id);
         Ok(())
     }
 }
@@ -628,6 +668,16 @@ enum ParsedVoiceStateEvent {
         guild_id: GuildId,
         member: Member,
     },
+}
+
+impl ParsedVoiceStateEvent {
+    fn member(&self) -> &Member {
+        match self {
+            Self::Joined { member, .. } => member,
+            Self::Left { member, .. } => member,
+            Self::Changed { member, .. } => member,
+        }
+    }
 }
 
 const _: Option<Parent> = None;

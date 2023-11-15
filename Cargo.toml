@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 color-eyre = "0.6.2"
-dashmap = "5.5.3"
 dotenvy = "0.15.7"
 eyre = "0.6.8"
 if_chain = "1.0.2"

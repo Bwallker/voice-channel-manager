@@ -1,9 +1,10 @@
-use crate::DashMap;
+use crate::{HashMap, HashSet};
 use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use serenity::model::prelude::*;
-use sqlx::{query, query_as, Pool, Postgres};
+use sqlx::{query, query_as_unchecked, Pool, Postgres};
 use std::hash::Hasher;
+use if_chain::if_chain;
 
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -157,12 +158,27 @@ pub async fn change_capacity(
 #[derive(Debug, Clone)]
 pub struct Child {
     pub child_id: ChannelId,
+    pub parent_id: ChannelId,
     pub child_number: u64,
     pub total_children_number: u64,
     pub template: String,
 }
 
-pub type Children = Vec<Child>;
+impl Hash for Child {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.child_id.hash(hasher)
+    }
+}
+
+impl PartialEq for Child {
+    fn eq(&self, other: &Self) -> bool {
+        self.child_id == other.child_id
+    }
+}
+
+impl Eq for Child {}
+
+pub type Children = HashSet<Child>;
 
 #[derive(Debug, Clone)]
 pub struct Parent {
@@ -212,7 +228,7 @@ pub async fn get_all_children_of_parent(
     channel_id: ChannelId,
 ) -> Result<Option<(Parent, Children)>> {
     debug!("Guild id and channel id in get all children is: {guild_id}, {channel_id}");
-    let res = query_as!(
+    let res = query_as_unchecked!(
         GetAllChildren,
         "SELECT child_id, child_number, next_child_number, channel_template, channel_id, capacity
         FROM template_channels
@@ -267,11 +283,13 @@ pub async fn get_all_children_of_parent(
 
             let total_children_number = row.next_child_number as u64 - 1;
             let template = row.channel_template;
+            let parent_id = ChannelId(row.channel_id as u64);
             Some(Child {
                 child_id,
                 child_number,
                 total_children_number,
                 template,
+                parent_id,
             })
         })
         .collect();
@@ -279,27 +297,39 @@ pub async fn get_all_children_of_parent(
     Ok(Some((parent, children)))
 }
 
+
+#[derive(Debug)]
+struct GetAllChannels {
+    channel_template: String,
+    channel_id: i64,
+    child_id: Option<i64>,
+    child_number: Option<i64>,
+    next_child_number: i64,
+    capacity: Option<i64>
+}
+
 pub async fn get_all_channels_in_guild(
     executor: &Pool<Postgres>,
     guild_id: GuildId,
-) -> Result<DashMap<Parent, Children>> {
+) -> Result<HashMap<Parent, Children>> {
     info!("Retrieving all channels in guild with ID `{guild_id}`!");
     let mut transaction = executor
         .begin()
         .await
         .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
 
-    let res = query!(
-        "SELECT channel_template, parent_id, child_id, child_number, next_child_number, capacity FROM template_channels JOIN child_channels ON template_channels.channel_id = child_channels.parent_id WHERE template_channels.guild_id = $1;",
+    let res = query_as_unchecked!(
+        GetAllChannels,
+        "SELECT channel_template, channel_id, child_id, child_number, next_child_number, capacity FROM template_channels LEFT JOIN child_channels ON template_channels.channel_id = child_channels.parent_id WHERE template_channels.guild_id = $1;",
         guild_id.0 as i64
     ).fetch_all(&mut *transaction).await.wrap_err_with(|| eyre!("Getting all channels in guild with ID `{guild_id}` failed!"))?;
 
-    let parent_channels = DashMap::default();
+    let mut parent_channels = HashMap::default();
 
     for row in res {
-        let parent_id = ChannelId(row.parent_id as u64);
-        let child_id = ChannelId(row.child_id as u64);
-        let child_number = row.child_number as u64;
+        let parent_id = ChannelId(row.channel_id as u64);
+        let child_id = row.child_id.map(|v| ChannelId(v as u64));
+        let child_number = row.child_number.map(|v| v as u64);
         let next_child_number = row.next_child_number as u64;
         let template = row.channel_template;
         let capacity = row.capacity.map(|v| v as u64);
@@ -311,17 +341,23 @@ pub async fn get_all_channels_in_guild(
             capacity,
         };
 
-        let mut entry = parent_channels.entry(parent).or_insert_with(Vec::new);
-        let children = entry.value_mut();
+        let children = parent_channels.entry(parent).or_insert_with(HashSet::default);
 
-        let child = Child {
-            child_id,
-            child_number,
-            total_children_number: next_child_number,
-            template,
-        };
-
-        children.push(child);
+        if_chain! {
+            if let Some(child_id) = child_id;
+            if let Some(child_number) = child_number;
+            then {
+                let child = Child {
+                    parent_id,
+                    child_id,
+                    child_number,
+                    total_children_number: next_child_number,
+                    template,
+                };
+                children.insert(child);
+            }
+        }
+        
     }
 
     Ok(parent_channels)

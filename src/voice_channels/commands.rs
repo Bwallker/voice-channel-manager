@@ -15,7 +15,7 @@ use sqlx::types::JsonValue;
 #[allow(unused_imports)]
 use tracing::{debug, info, trace, trace_span};
 
-use crate::{events::delete_parent_and_children, get_db_handle, GuildChannels};
+use crate::{events::delete_parent_and_children, get_db_handle, util::get_value, GuildChannels};
 
 #[command]
 #[description("Alters the template for a template channel.")]
@@ -136,27 +136,20 @@ async fn delete_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
         .suggestion("Channel ID must be a valid integer.")?;
 
     let guild_id = msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?;
+    {
+        let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
+        let lock = guild_channels_map.read().await;
+        let entry = lock
+            .get(&guild_id)
+            .ok_or_else(|| eyre!("No entry for guild ID {guild_id} in guild_channels_map"))?;
+        let lock = entry.read().await;
 
-    let guild_channels_map = ctx
-        .data
-        .read()
-        .await
-        .get::<GuildChannels>()
-        .unwrap()
-        .clone();
+        let (parent, children) = lock
+            .get_key_value(&channel_id.into())
+            .ok_or_else(|| eyre!("No entry for channel ID {channel_id} in guild_map"))?;
 
-    let entry = guild_channels_map
-        .get(&guild_id)
-        .ok_or_else(|| eyre!("No entry for guild ID {guild_id} in guild_channels_map"))?;
-    let guild_map = entry.value();
-
-    let entry = guild_map
-        .get(&channel_id.into())
-        .ok_or_else(|| eyre!("No entry for channel ID {channel_id} in guild_map"))?;
-
-    let (parent, children) = entry.pair();
-    delete_parent_and_children(ctx, guild_id, parent, children).await?;
-
+        delete_parent_and_children(ctx, guild_id, parent, children).await?;
+    }
     msg.channel_id
         .say(
             &ctx.http,
