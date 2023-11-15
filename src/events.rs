@@ -1,4 +1,4 @@
-use crate::{DashMap, HashMap};
+use crate::DashMap;
 use eyre::{eyre, Report, Result, WrapErr};
 use if_chain::if_chain;
 use serde_json::Map;
@@ -43,7 +43,8 @@ async fn update_guild(_ctx: Context, guild_id: GuildId) -> Report {
         sleep(UPDATE_INTERVAL).await;
         span.in_scope(|| trace!("Performing update for guild {guild_id}!"));
         let guild_map = guild_channel_map.get(&guild_id).unwrap();
-        for children in guild_map.values() {
+        for r#ref in guild_map.value().iter() {
+            let children = r#ref.value();
             span.in_scope(|| debug!("Updating children: {children:#?}"));
             for child in children {
                 span.in_scope(|| debug!("Updating child: {child:#?}"));
@@ -98,7 +99,7 @@ pub async fn delete_parent_and_children(
             .wrap_err_with(|| eyre!("Failed to delete channel!"))?;
         debug!("Successfully deleted channel {c:?}");
     }
-    voice_channels::db::delete_template(&get_db_handle(&ctx).await, guild_id, parent.parent_id)
+    voice_channels::db::delete_template(&get_db_handle(ctx).await, guild_id, parent.parent_id)
         .await
         .wrap_err_with(|| eyre!("Failed to delete template!"))?;
 
@@ -249,14 +250,15 @@ impl VoiceChannelManagerEventHandler {
 
         info!("Parsed event: {:#?}", parsed_event);
 
-        let (parent, children) = voice_channels::db::get_all_children_of_parent(
+        let Some((parent, children)) = voice_channels::db::get_all_children_of_parent(
             &get_db_handle(&ctx).await,
             guild_id,
             channel_id,
         )
         .await
-        .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))
-        .t;
+        .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))? else {
+            return Err(eyre!("No parent found!"));
+        };
         info!("Parent: {:?}, children: {:?}", parent, children);
         if parent.parent_id == channel_id {
             let parent_channel = ctx
@@ -312,7 +314,7 @@ impl VoiceChannelManagerEventHandler {
                 .unwrap()
                 .clone();
 
-            let mut map = guild_channels_map.get_mut(&guild_id).unwrap();
+            let map = guild_channels_map.get_mut(&guild_id).unwrap();
             map.entry(parent.clone()).or_default().push(Child {
                 child_id: new.id,
                 child_number: total_children_number,

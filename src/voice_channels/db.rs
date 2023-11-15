@@ -1,4 +1,4 @@
-use crate::HashMap;
+use crate::DashMap;
 use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use serenity::model::prelude::*;
@@ -262,7 +262,7 @@ pub async fn get_all_children_of_parent(
 pub async fn get_all_channels_in_guild(
     executor: &Pool<Postgres>,
     guild_id: GuildId,
-) -> Result<HashMap<Parent, Children>> {
+) -> Result<DashMap<Parent, Children>> {
     info!("Retrieving all channels in guild with ID `{guild_id}`!");
     let mut transaction = executor
         .begin()
@@ -274,7 +274,7 @@ pub async fn get_all_channels_in_guild(
         guild_id.0 as i64
     ).fetch_all(&mut *transaction).await.wrap_err_with(|| eyre!("Getting all channels in guild with ID `{guild_id}` failed!"))?;
 
-    let mut parent_channels = HashMap::default();
+    let parent_channels = DashMap::default();
 
     for row in res {
         let parent_id = ChannelId(row.parent_id as u64);
@@ -291,7 +291,9 @@ pub async fn get_all_channels_in_guild(
             capacity,
         };
 
-        let entry = parent_channels.entry(parent).or_insert_with(Vec::new);
+        let mut entry = parent_channels.entry(parent).or_insert_with(Vec::new);
+        let children = entry.value_mut();
+
         let child = Child {
             child_id,
             child_number,
@@ -299,7 +301,7 @@ pub async fn get_all_channels_in_guild(
             template,
         };
 
-        entry.push(child);
+        children.push(child);
     }
 
     Ok(parent_channels)

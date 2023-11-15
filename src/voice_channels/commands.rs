@@ -145,14 +145,16 @@ async fn delete_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
         .unwrap()
         .clone();
 
-    let guild_map = guild_channels_map
+    let entry = guild_channels_map
         .get(&guild_id)
         .ok_or_else(|| eyre!("No entry for guild ID {guild_id} in guild_channels_map"))?;
+    let guild_map = entry.value();
 
-    let (parent, children) = guild_map
-        .get_key_value(&channel_id.into())
+    let entry = guild_map
+        .get(&channel_id.into())
         .ok_or_else(|| eyre!("No entry for channel ID {channel_id} in guild_map"))?;
 
+    let (parent, children) = entry.pair();
     delete_parent_and_children(ctx, guild_id, parent, children).await?;
 
     msg.channel_id
