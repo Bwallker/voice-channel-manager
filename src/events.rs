@@ -30,8 +30,7 @@ async fn update_guild(_ctx: Context, guild_id: GuildId) -> Report {
             }
         };
     }
-
-    let span = debug_span!("Update for guild {guild_id}");
+    let span = debug_span!("Guild updater");
     let guild_channel_map = _ctx
         .data
         .read()
@@ -41,7 +40,7 @@ async fn update_guild(_ctx: Context, guild_id: GuildId) -> Report {
         .clone();
     loop {
         sleep(UPDATE_INTERVAL).await;
-        span.in_scope(|| trace!("Performing update for guild {guild_id}!"));
+        span.in_scope(|| debug!("Performing update for guild {guild_id}!"));
         let guild_map = guild_channel_map.get(&guild_id).unwrap();
         for r#ref in guild_map.value().iter() {
             let children = r#ref.value();
@@ -164,9 +163,8 @@ impl VoiceChannelManagerEventHandler {
 
     async fn ready(&self, ctx: Context, ready: &Ready) -> Result<()> {
         let ready_span = info_span!("Ready Span");
-        let _guard = ready_span.enter();
-
-        info!("{} is connected!", ready.user.name);
+        ready_span.in_scope(|| info!("{} is connected!", ready.user.name));
+        
         let mut lock = ctx.data.write().await;
         lock.insert::<DBConnection>(
             PgPoolOptions::new()
@@ -202,7 +200,7 @@ impl VoiceChannelManagerEventHandler {
             guild_channels_map.insert(guild_id, all_channels);
         }
 
-        info!("Preceding to remove all inactive guilds");
+        ready_span.in_scope(|| info!("Preceding to remove all inactive guilds"));
 
         clean_inactive_guilds_from_db(
             connection,
@@ -214,7 +212,7 @@ impl VoiceChannelManagerEventHandler {
         )
         .await
         .wrap_err_with(|| eyre!("Cleaning inactive guilds from database failed!"))?;
-        info!("Finished running ready!");
+        ready_span.in_scope(|| info!("Finished running ready!"));
         Ok(())
     }
 
@@ -704,8 +702,7 @@ fn parse_voice_event(
 impl RawEventHandler for VoiceChannelManagerEventHandler {
     async fn raw_event(&self, ctx: Context, event: Event) {
         let event_span = trace_span!("Discord event");
-        let _guard = event_span.enter();
-        trace!("Event: {event:#?}");
+        event_span.in_scope(|| trace!("Event: {event:#?}"));
         let res = match event.clone() {
             Event::Ready(ready) => self.ready(ctx, &ready.ready).await,
             Event::VoiceStateUpdate(mut voice_state_event) => {
@@ -738,7 +735,7 @@ impl RawEventHandler for VoiceChannelManagerEventHandler {
             _ => Ok(()),
         };
         if let Err(err) = res {
-            error!("Error handling event {event:#?}: \n\n\n{err:#?}");
+            event_span.in_scope(|| error!("Error handling event {event:#?}: \n\n\n{err:#?}"));
         }
     }
 }

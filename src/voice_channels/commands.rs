@@ -21,6 +21,7 @@ use crate::{events::delete_parent_and_children, get_db_handle, GuildChannels};
 #[description("Alters the template for a template channel.")]
 #[usage("<prefix>/alter_template <channel id> <new template>")]
 #[example("vc/alter_template 123456789 \"Gaming channel number {#}#\"")]
+#[aliases("alter_channel", "alter_parent")]
 #[only_in(guild)]
 #[num_args(2)]
 #[required_permissions("MANAGE_CHANNELS")]
@@ -74,19 +75,18 @@ async fn alter_template(ctx: &Context, msg: &Message, mut args: Args) -> Command
 async fn create_channel(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     args.trimmed().quoted();
     let span = trace_span!("create_channel span");
-    let _guard = span.enter();
-    trace!("Entered create_channel!");
+    span.in_scope(|| trace!("Entered create_channel!"));
     let channel_name = args
         .single_quoted::<String>()
         .wrap_err_with(|| eyre!("No channel name provided!"))?;
-    trace!("Channel name: {}!", channel_name);
+    span.in_scope(|| trace!("Channel name: {}!", channel_name));
 
     let template = args
         .quoted()
         .current()
         .ok_or_else(|| eyre!("No template provided!"))?;
 
-    trace!("Template: {}!", template);
+    span.in_scope(|| trace!("Template: {}!", template));
     let mut options = JsonMap::new();
     options.insert(
         "name".to_string(),
@@ -172,7 +172,7 @@ async fn delete_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
 #[description("Changes the capacity for generated channels for a template channel.")]
 #[usage("<prefix>/change_capacity <channel id> <capacity>")]
 #[example("vc/change_capacity 1234567890 42")]
-#[aliases("change_cap")]
+#[aliases("change_cap", "set_cap", "set_capacity")]
 #[only_in(guild)]
 #[num_args(2)]
 #[required_permissions("MANAGE_CHANNELS")]

@@ -2,7 +2,7 @@ use crate::DashMap;
 use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use serenity::model::prelude::*;
-use sqlx::{query, Pool, Postgres};
+use sqlx::{query, query_as, Pool, Postgres};
 use std::hash::Hasher;
 
 #[allow(unused_imports)]
@@ -196,16 +196,27 @@ impl PartialEq for Parent {
 }
 
 impl Eq for Parent {}
+#[derive(Debug)]
+struct GetAllChildren {
+    child_id: Option<i64>,
+    child_number: Option<i64>,
+    next_child_number: Option<i64>,
+    channel_template: Option<String>,
+    parent_id: Option<i64>,
+    capacity: Option<i64>,
+}
 
 pub async fn get_all_children_of_parent(
     executor: &Pool<Postgres>,
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> Result<Option<(Parent, Children)>> {
-    let res = query!(
+    debug!("Guild id and channel id in get all children is: {guild_id}, {channel_id}");
+    let res = query_as!(
+        GetAllChildren,
         "SELECT child_id, child_number, next_child_number, channel_template, parent_id, capacity
         FROM child_channels
-        JOIN template_channels
+        RIGHT JOIN template_channels
         ON parent_id = channel_id
         WHERE child_channels.guild_id = $1
         AND (
@@ -229,11 +240,23 @@ pub async fn get_all_children_of_parent(
         return Ok(None);
     };
 
-    let parent_id = ChannelId(parent_row.parent_id as u64);
+    let parent_id = ChannelId(
+        parent_row
+            .parent_id
+            .ok_or_else(|| eyre!("Parent ID was missing from parent row!"))? as u64,
+    );
 
-    let total_children_number = parent_row.next_child_number as u64 - 1;
+    let total_children_number = parent_row
+        .next_child_number
+        .ok_or_else(|| eyre!("Next child number was missing from parent row!"))?
+        as u64
+        - 1;
 
-    let template = parent_row.channel_template.to_owned();
+    let template = parent_row
+        .channel_template
+        .as_ref()
+        .ok_or_else(|| eyre!("Channel template was missing from parent row!"))?
+        .to_owned();
 
     let capacity = parent_row.capacity.map(|v| v as u64);
 
@@ -245,19 +268,19 @@ pub async fn get_all_children_of_parent(
     };
 
     let children = iter
-        .map(|row| {
-            let child_id = ChannelId(row.child_id as u64);
+        .filter_map(|row| {
+            let child_id = ChannelId(row.child_id? as u64);
 
-            let child_number = row.child_number as u64;
+            let child_number = row.child_number? as u64;
 
-            let total_children_number = row.next_child_number as u64 - 1;
-            let template = row.channel_template;
-            Child {
+            let total_children_number = row.next_child_number? as u64 - 1;
+            let template = row.channel_template?;
+            Some(Child {
                 child_id,
                 child_number,
                 total_children_number,
                 template,
-            }
+            })
         })
         .collect();
 
