@@ -4,7 +4,7 @@ use eyre::{eyre, Result, WrapErr};
 use serenity::model::prelude::*;
 use sqlx::{query, Pool, Postgres};
 use std::hash::Hasher;
-use tokio::join;
+
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -39,34 +39,39 @@ pub async fn delete_template(
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> Result<()> {
-    let q1 = query!(
+    let mut transaction = executor
+        .begin()
+        .await
+        .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
+    let res1 = query!(
         "DELETE FROM template_channels WHERE guild_id = $1 AND channel_id = $2;",
         guild_id.0 as i64,
         channel_id.0 as i64
     )
-    .execute(executor);
-    let q2 = query!(
+    .execute(&mut *transaction)
+    .await
+    .wrap_err_with(|| {
+        eyre!("Deleting template from database for server with id {guild_id} failed!")
+    })?;
+
+    debug!("Finished deleting parent with id {channel_id} from database!");
+    assert_eq!(res1.rows_affected(), 1);
+    let res2 = query!(
         "DELETE FROM child_channels WHERE guild_id = $1 AND parent_id = $2;",
         guild_id.0 as i64,
         channel_id.0 as i64,
     )
-    .execute(executor);
-    let (f1, f2) = join!(q1, q2);
-    let mut error = None;
-    if let Err(e) = f1 {
-        error = Some(eyre!(e).wrap_err(eyre!(
-            "Deleting template from database for server with id {guild_id} failed!"
-        )));
-    }
-    if let Err(e) = f2 {
-        error = Some(error.take().unwrap_or(eyre!(e)).wrap_err(eyre!(
-            "Deleting children from database for server with id {guild_id} failed!"
-        )));
-    }
-    match error {
-        Some(e) => Err(e),
-        None => Ok(()),
-    }
+    .execute(executor)
+    .await
+    .wrap_err_with(|| {
+        eyre!("Deleting child channels from database for server with id {guild_id} failed!")
+    })?;
+    debug!(
+        "Finished deleting {} children of parent with id {channel_id} from database!",
+        res2.rows_affected()
+    );
+
+    Ok(())
 }
 
 pub async fn register_child(
