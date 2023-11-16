@@ -87,8 +87,8 @@ use voice_channels::db::{Children, Parent};
 
 mod events;
 mod prefixes;
-mod voice_channels;
 mod util;
+mod voice_channels;
 
 fn main() -> Result<()> {
     color_eyre::install().expect("Installing color_eyre to not fail.");

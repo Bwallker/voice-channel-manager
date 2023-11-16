@@ -2,7 +2,7 @@ use crate::{util::get_value, voice_channels::db::Children, HashMap};
 use eyre::{eyre, Result, WrapErr};
 use if_chain::if_chain;
 use serde_json::Map;
-use serenity::{async_trait, model::prelude::*, prelude::*, cache::CacheUpdate};
+use serenity::{async_trait, cache::CacheUpdate, model::prelude::*, prelude::*};
 use sqlx::{postgres::PgPoolOptions, query, Pool, Postgres};
 use std::{env::var, sync::Arc};
 
@@ -401,9 +401,7 @@ impl VoiceChannelManagerEventHandler {
             .wrap_err_with(|| eyre!("Retrieving voice channels failed in guild `{guild_id}`!"))?;
         debug!("All channels for guild: {guild_id}: {all_channels:?}");
         guild_channels_lock.insert(guild_id, Arc::new(RwLock::new(all_channels.clone())));
-        for (parent, children) in all_channels.iter() {
-
-        }
+        for (parent, children) in all_channels.iter() {}
         debug!("Guild channels after insert: {guild_channels_lock:?}");
         drop(guild_channels_lock);
 
@@ -669,7 +667,10 @@ impl RawEventHandler for VoiceChannelManagerEventHandler {
             Event::Ready(ready) => self.ready(ctx, &ready.ready).await,
             Event::VoiceStateUpdate(mut voice_state_event) => {
                 let new = voice_state_event.voice_state.clone();
-                let old = new.guild_id.and_then(|id| ctx.cache.guild(id)).and_then(|g| g.voice_states.get(&new.user_id).cloned());
+                let old = new
+                    .guild_id
+                    .and_then(|id| ctx.cache.guild(id))
+                    .and_then(|g| g.voice_states.get(&new.user_id).cloned());
                 voice_state_event.update(&ctx.cache);
                 self.voice_state_update(ctx, old, new).await
             }
