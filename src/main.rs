@@ -8,9 +8,9 @@ pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type HashSet<K> = rustc_hash::FxHashSet<K>;
 
 use dotenvy::dotenv;
-use eyre::{eyre, Report, Result, WrapErr};
+use eyre::{eyre, Result, WrapErr};
 use sqlx::{Pool, Postgres};
-use tokio::{runtime::Builder, task::JoinHandle};
+use tokio::runtime::Builder;
 #[allow(unused_imports)]
 use tracing::{debug, error, event, info, trace, warn, Level};
 use tracing_subscriber::fmt::time::UtcTime;
@@ -39,12 +39,6 @@ struct GuildChannels;
 
 impl TypeMapKey for GuildChannels {
     type Value = Arc<RwLock<HashMap<GuildId, Arc<RwLock<HashMap<Parent, Children>>>>>>;
-}
-
-struct GuildHandles;
-
-impl TypeMapKey for GuildHandles {
-    type Value = Arc<Mutex<HashMap<GuildId, JoinHandle<Report>>>>;
 }
 
 pub async fn get_db_handle(ctx: &Context) -> Pool<Postgres> {

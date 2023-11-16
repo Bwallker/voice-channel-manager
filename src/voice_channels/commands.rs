@@ -15,7 +15,7 @@ use sqlx::types::JsonValue;
 #[allow(unused_imports)]
 use tracing::{debug, info, trace, trace_span};
 
-use crate::{events::delete_parent_and_children, get_db_handle, util::get_value, GuildChannels};
+use crate::get_db_handle;
 
 #[command]
 #[description("Alters the template for a template channel.")]
@@ -121,47 +121,6 @@ async fn create_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
 }
 
 #[command]
-#[description("Deletes a template channel.")]
-#[usage("<prefix>/delete_channel <channel id>")]
-#[example("vc/delete_channel 1234567890")]
-#[aliases("remove_channel")]
-#[only_in(guild)]
-#[num_args(1)]
-#[required_permissions("MANAGE_CHANNELS")]
-async fn delete_channel(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    args.trimmed().quoted();
-    let channel_id = args
-        .single_quoted::<ChannelId>()
-        .wrap_err_with(|| eyre!("Failed to parse channel id!"))
-        .suggestion("Channel ID must be a valid integer.")?;
-
-    let guild_id = msg.guild_id.ok_or_else(|| eyre!("No guild id provided!"))?;
-    {
-        let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
-        let lock = guild_channels_map.read().await;
-        let entry = lock
-            .get(&guild_id)
-            .ok_or_else(|| eyre!("No entry for guild ID {guild_id} in guild_channels_map"))?;
-        let lock = entry.read().await;
-
-        let (parent, children) = lock
-            .get_key_value(&channel_id.into())
-            .ok_or_else(|| eyre!("No entry for channel ID {channel_id} in guild_map"))?;
-
-        delete_parent_and_children(ctx, guild_id, parent, children).await?;
-    }
-    msg.channel_id
-        .say(
-            &ctx.http,
-            format!("{}: Channel successfully deleted!", msg.author.mention()),
-        )
-        .await
-        .wrap_err_with(|| "Failed to send message!")?;
-
-    Ok(())
-}
-
-#[command]
 #[description("Changes the capacity for generated channels for a template channel.")]
 #[usage("<prefix>/change_capacity <channel id> <capacity>")]
 #[example("vc/change_capacity 1234567890 42")]
@@ -201,5 +160,5 @@ async fn change_capacity(ctx: &Context, msg: &Message, mut args: Args) -> Comman
 }
 
 #[group("Template channels")]
-#[commands(alter_template, create_channel, delete_channel, change_capacity)]
+#[commands(alter_template, create_channel, change_capacity)]
 struct TemplateChannels;

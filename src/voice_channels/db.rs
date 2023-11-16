@@ -1,10 +1,10 @@
 use crate::{HashMap, HashSet};
 use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
+use if_chain::if_chain;
 use serenity::model::prelude::*;
 use sqlx::{query, query_as_unchecked, Pool, Postgres};
 use std::hash::Hasher;
-use if_chain::if_chain;
 
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -155,7 +155,7 @@ pub async fn change_capacity(
     .map(|_| ())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Child {
     pub child_id: ChannelId,
     pub parent_id: ChannelId,
@@ -180,7 +180,7 @@ impl Eq for Child {}
 
 pub type Children = HashSet<Child>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Parent {
     pub parent_id: ChannelId,
     pub total_children_number: u64,
@@ -297,7 +297,6 @@ pub async fn get_all_children_of_parent(
     Ok(Some((parent, children)))
 }
 
-
 #[derive(Debug)]
 struct GetAllChannels {
     channel_template: String,
@@ -305,7 +304,7 @@ struct GetAllChannels {
     child_id: Option<i64>,
     child_number: Option<i64>,
     next_child_number: i64,
-    capacity: Option<i64>
+    capacity: Option<i64>,
 }
 
 pub async fn get_all_channels_in_guild(
@@ -341,7 +340,9 @@ pub async fn get_all_channels_in_guild(
             capacity,
         };
 
-        let children = parent_channels.entry(parent).or_insert_with(HashSet::default);
+        let children = parent_channels
+            .entry(parent)
+            .or_insert_with(HashSet::default);
 
         if_chain! {
             if let Some(child_id) = child_id;
@@ -357,8 +358,74 @@ pub async fn get_all_channels_in_guild(
                 children.insert(child);
             }
         }
-        
     }
 
     Ok(parent_channels)
+}
+
+pub async fn update_next_child_number(
+    executor: &Pool<Postgres>,
+    parent_id: ChannelId,
+    child_id: ChannelId,
+) -> Result<()> {
+    let res = query!(
+        "
+        WITH
+            cn AS (
+                SELECT child_number FROM child_channels WHERE child_id=$2
+            ),
+            next AS (
+                SELECT COALESCE(MIN(child_number) + 1, 1) AS res
+                FROM child_channels
+                WHERE (parent_id = $1) AND
+                    (child_number + 1 NOT IN
+                        (
+                        SELECT child_number FROM child_channels
+                        )
+                    )
+            )
+        UPDATE template_channels
+        SET next_child_number = 
+        CASE
+            WHEN (SELECT * FROM next) = (SELECT * FROM cn) + 1 THEN (SELECT * FROM cn)
+            ELSE (SELECT * FROM next)
+        END
+        WHERE channel_id = $1
+    ",
+        parent_id.0 as i64,
+        child_id.0 as i64
+    )
+    .execute(executor)
+    .await
+    .wrap_err_with(|| eyre!("Failed to update next_child_number for parent with id {parent_id}"))?;
+
+    let rows_affected = res.rows_affected();
+
+    assert_eq!(
+        rows_affected, 1,
+        "Sanity check failed: update_next_child_number updated {rows_affected} rows!"
+    );
+
+    Ok(())
+}
+
+pub async fn init_next_child_number(executor: &Pool<Postgres>) -> Result<()> {
+    let rows_affected = query!(
+        "
+        WITH next AS (
+            SELECT MIN(child_number) + 1 AS res, parent_id
+            FROM child_channels
+            GROUP BY parent_id
+        )
+        UPDATE template_channels
+        SET next_child_number = (SELECT COALESCE(res, 1) FROM next RIGHT JOIN template_channels ON parent_id = channel_id)
+    "
+    )
+    .execute(executor)
+    .await
+    .wrap_err_with(|| eyre!("Failed to initialize next_child_number!"))?
+    .rows_affected();
+
+    info!("Updated {rows_affected} rows in init_next_child_number!");
+    Ok(())
 }
