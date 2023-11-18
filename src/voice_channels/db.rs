@@ -429,3 +429,15 @@ pub async fn init_next_child_number(executor: &Pool<Postgres>) -> Result<()> {
     info!("Updated {rows_affected} rows in init_next_child_number!");
     Ok(())
 }
+
+
+pub async fn remove_deleted_children(executor: &Pool<Postgres>, deleted_children: &[i64]) -> Result<()> {
+    let rows_affected = query!(
+        "DELETE FROM child_channels WHERE child_id = ANY($1);",
+        deleted_children
+    ).execute(executor).await.wrap_err_with(|| eyre!("Failed to remove deleted children!"))?.rows_affected();
+
+    debug!("Deleted {rows_affected} rows in remove_deleted_children!");
+    
+    Ok(())
+}

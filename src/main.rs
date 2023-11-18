@@ -99,7 +99,9 @@ fn main() -> Result<()> {
             EnvFilter::builder()
                 .with_regex(true)
                 .try_from_env()
-                .wrap_err_with(|| eyre!("Parsing tracing filter from environment failed!"))?,
+                .wrap_err_with(|| {
+                    eyre!("Parsing tracing filter from environment variable `RUST_LOG` failed!")
+                })?,
         )
         .try_init()
         .map_err(|e| eyre!(e))
