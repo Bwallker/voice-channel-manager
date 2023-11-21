@@ -28,7 +28,7 @@ The bot automatically creates and deletes channels using the concept of parent a
 4. `{c}`: The total capacity of the channel. This is the maximum number of users that can be connected to the channel at once.
 
 
-#### Example templates
+###### Example templates
 
 `Gaming channel number: {#}`
 `Gaming channel number: {#}/{%}`
