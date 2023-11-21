@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet as SlowSet,
     env::var,
+    str::FromStr,
     sync::{Arc, OnceLock},
 };
 
@@ -13,9 +14,9 @@ use sqlx::{Pool, Postgres};
 use tokio::runtime::Builder;
 #[allow(unused_imports)]
 use tracing::{debug, error, event, info, trace, warn, Level};
-use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::fmt::time::UtcTime;
 
 struct DBConnection;
 
@@ -90,18 +91,29 @@ mod prefixes;
 mod util;
 mod voice_channels;
 
+
 fn main() -> Result<()> {
     color_eyre::install().expect("Installing color_eyre to not fail.");
-    dotenv().wrap_err_with(|| eyre!("Initializing .env failed!"))?;
+    if let Err(err) = dotenv() {
+        if err.not_found() {
+            eprintln!("Not .env file was found! This is not necessarily a fatal error if you have all necessary environment variables configured in your environment.");
+        } else {
+            return Err(eyre!(err).wrap_err(eyre!("Parsing .env file failed!")));
+        }
+    }
+    let rust_log = var("RUST_LOG");
     FmtSubscriber::builder()
         .with_timer(UtcTime::rfc_3339())
         .with_env_filter(
-            EnvFilter::builder()
-                .with_regex(true)
-                .try_from_env()
-                .wrap_err_with(|| {
-                    eyre!("Parsing tracing filter from environment variable `RUST_LOG` failed!")
-                })?,
+            EnvFilter::from_str(
+                rust_log
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("voice_channel_manager=debug,info"),
+            )
+            .wrap_err_with(|| {
+                eyre!("Parsing tracing filter from environment variable `RUST_LOG` failed!")
+            })?,
         )
         .try_init()
         .map_err(|e| eyre!(e))

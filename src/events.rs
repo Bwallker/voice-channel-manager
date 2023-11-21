@@ -4,7 +4,7 @@ use if_chain::if_chain;
 use serde_json::Map;
 use serenity::{async_trait, cache::CacheUpdate, model::prelude::*, prelude::*};
 use sqlx::{postgres::PgPoolOptions, query, Pool, Postgres};
-use std::{env::var, sync::Arc, ops::Not};
+use std::{env::var, ops::Not, sync::Arc};
 
 #[allow(unused_imports)]
 use tracing::{debug, debug_span, error, info, info_span, trace, trace_span};
@@ -400,19 +400,35 @@ impl VoiceChannelManagerEventHandler {
             .await
             .wrap_err_with(|| eyre!("Retrieving voice channels failed in guild `{guild_id}`!"))?;
         debug!("All channels for guild: {guild_id}: {all_channels:?}");
-        
+
+        let mut deleted_child_ids = Vec::new();
+        let mut deleted_parent_ids = Vec::new();
+
         for (parent, children) in all_channels.iter() {
             debug!("Parent: {parent:#?}, Children: {children:#?}");
             if guild.channels.contains_key(&parent.parent_id) {
                 info!("Parent {} doesn't exist anymore!", parent.parent_id);
-                delete_parent_and_children(&ctx, guild_id, parent, children).await.wrap_err_with(|| eyre!("Failed deleting parent and children!"))?;
+                deleted_parent_ids.push(parent.parent_id.0 as i64);
+                deleted_child_ids.extend(children.iter().map(|child| child.child_id.0 as i64));
                 continue;
             }
-            let deleted_children_ids = children.iter().filter_map(|child| guild.channels.contains_key(&child.child_id).not().then_some(child.child_id.0 as i64)).collect::<Vec<_>>();
-            debug!("Deleted children: {deleted_children_ids:?}");
-            voice_channels::db::remove_deleted_children(&get_db_handle(&ctx).await, &deleted_children_ids).await.wrap_err_with(|| eyre!("Deleting children failed!"))?;
-
+            deleted_child_ids.extend(children.iter().filter_map(|child| {
+                guild
+                    .channels
+                    .contains_key(&child.child_id)
+                    .not()
+                    .then_some(child.child_id.0 as i64)
+            }));
+            debug!("Deleted children: {deleted_child_ids:?}");
         }
+
+        voice_channels::db::remove_dead_channels(
+            &get_db_handle(&ctx).await,
+            &deleted_parent_ids,
+            &deleted_child_ids,
+        )
+        .await
+        .wrap_err_with(|| eyre!("Deleting children failed!"))?;
         guild_channels_lock.insert(guild_id, Arc::new(RwLock::new(all_channels)));
         debug!("Guild channels after insert: {guild_channels_lock:?}");
         drop(guild_channels_lock);

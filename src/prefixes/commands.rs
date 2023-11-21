@@ -15,6 +15,7 @@ use crate::get_db_handle;
 #[description("Changes the prefix for the server.")]
 #[usage("<prefix>/change_prefix <new prefix>")]
 #[example("vc/change_prefix !")]
+#[aliases("set_prefix")]
 #[only_in(guild)]
 #[num_args(1)]
 #[required_permissions("MANAGE_GUILD")]

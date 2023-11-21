@@ -3,7 +3,7 @@ use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use if_chain::if_chain;
 use serenity::model::prelude::*;
-use sqlx::{query, query_as_unchecked, Pool, Postgres};
+use sqlx::{query, query_as_unchecked, Pool, Postgres, PgConnection, Acquire};
 use std::hash::Hasher;
 
 #[allow(unused_imports)]
@@ -431,7 +431,11 @@ pub async fn init_next_child_number(executor: &Pool<Postgres>) -> Result<()> {
 }
 
 
-pub async fn remove_deleted_children(executor: &Pool<Postgres>, deleted_children: &[i64]) -> Result<()> {
+pub async fn remove_dead_channels(executor: &Pool<Postgres>, deleted_parents: &[i64], deleted_children: &[i64]) -> Result<()> {
+    let mut transaction = executor
+        .begin()
+        .await
+        .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
     let rows_affected = query!(
         "DELETE FROM child_channels WHERE child_id = ANY($1);",
         deleted_children
