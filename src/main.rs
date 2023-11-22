@@ -10,18 +10,18 @@ pub type HashSet<K> = rustc_hash::FxHashSet<K>;
 
 use dotenvy::dotenv;
 use eyre::{eyre, Result, WrapErr};
-use sqlx::{Pool, Postgres};
+use sqlx::PgPool;
 use tokio::runtime::Builder;
 #[allow(unused_imports)]
 use tracing::{debug, error, event, info, trace, warn, Level};
+use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::FmtSubscriber;
-use tracing_subscriber::fmt::time::UtcTime;
 
 struct DBConnection;
 
 impl TypeMapKey for DBConnection {
-    type Value = Pool<Postgres>;
+    type Value = PgPool;
 }
 
 struct ClientID;
@@ -42,7 +42,7 @@ impl TypeMapKey for GuildChannels {
     type Value = Arc<RwLock<HashMap<GuildId, Arc<RwLock<HashMap<Parent, Children>>>>>>;
 }
 
-pub async fn get_db_handle(ctx: &Context) -> Pool<Postgres> {
+pub async fn get_db_handle(ctx: &Context) -> PgPool {
     ctx.data.read().await.get::<DBConnection>().unwrap().clone()
 }
 
@@ -86,11 +86,11 @@ use serenity::{
 };
 use voice_channels::db::{Children, Parent};
 
+mod db;
 mod events;
 mod prefixes;
 mod util;
 mod voice_channels;
-
 
 fn main() -> Result<()> {
     color_eyre::install().expect("Installing color_eyre to not fail.");

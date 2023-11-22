@@ -3,14 +3,14 @@ use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use if_chain::if_chain;
 use serenity::model::prelude::*;
-use sqlx::{query, query_as_unchecked, Pool, Postgres};
+use sqlx::{query, query_as_unchecked, PgPool};
 use std::hash::Hasher;
 
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
 #[allow(dead_code)]
-pub async fn get_template(executor: &Pool<Postgres>, guild_id: GuildId) -> Result<Option<String>> {
+pub async fn get_template(executor: &PgPool, guild_id: GuildId) -> Result<Option<String>> {
     query!(
         "SELECT channel_template FROM template_channels WHERE guild_id = $1;",
         guild_id.0 as i64
@@ -22,7 +22,7 @@ pub async fn get_template(executor: &Pool<Postgres>, guild_id: GuildId) -> Resul
 }
 
 pub async fn set_template(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     channel_id: ChannelId,
     guild_id: GuildId,
     template: String,
@@ -36,7 +36,7 @@ pub async fn set_template(
 }
 
 pub async fn delete_template(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> Result<()> {
@@ -76,7 +76,7 @@ pub async fn delete_template(
 }
 
 pub async fn register_child(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     guild_id: GuildId,
     parent_id: ChannelId,
     child_id: ChannelId,
@@ -118,7 +118,7 @@ pub async fn register_child(
 
 #[allow(dead_code)]
 pub async fn delete_child(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     guild_id: GuildId,
     parent_id: ChannelId,
     child_id: ChannelId,
@@ -138,7 +138,7 @@ pub async fn delete_child(
 }
 
 pub async fn change_capacity(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
     capacity: u64,
@@ -223,7 +223,7 @@ struct GetAllChildren {
 }
 
 pub async fn get_all_children_of_parent(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
 ) -> Result<Option<(Parent, Children)>> {
@@ -308,7 +308,7 @@ struct GetAllChannels {
 }
 
 pub async fn get_all_channels_in_guild(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     guild_id: GuildId,
 ) -> Result<HashMap<Parent, Children>> {
     info!("Retrieving all channels in guild with ID `{guild_id}`!");
@@ -364,7 +364,7 @@ pub async fn get_all_channels_in_guild(
 }
 
 pub async fn update_next_child_number(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     parent_id: ChannelId,
     child_id: ChannelId,
 ) -> Result<()> {
@@ -409,7 +409,7 @@ pub async fn update_next_child_number(
     Ok(())
 }
 
-pub async fn init_next_child_number(executor: &Pool<Postgres>) -> Result<()> {
+pub async fn init_next_child_number(executor: &PgPool) -> Result<()> {
     let rows_affected = query!(
         "
         WITH next AS (
@@ -431,7 +431,7 @@ pub async fn init_next_child_number(executor: &Pool<Postgres>) -> Result<()> {
 }
 
 pub async fn remove_dead_channels(
-    executor: &Pool<Postgres>,
+    executor: &PgPool,
     deleted_parents: &[i64],
     deleted_children: &[i64],
 ) -> Result<()> {
