@@ -3,7 +3,7 @@ use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use if_chain::if_chain;
 use serenity::model::prelude::*;
-use sqlx::{query, query_as_unchecked, Pool, Postgres, PgConnection, Acquire};
+use sqlx::{query, query_as_unchecked, Pool, Postgres};
 use std::hash::Hasher;
 
 #[allow(unused_imports)]
@@ -430,8 +430,11 @@ pub async fn init_next_child_number(executor: &Pool<Postgres>) -> Result<()> {
     Ok(())
 }
 
-
-pub async fn remove_dead_channels(executor: &Pool<Postgres>, deleted_parents: &[i64], deleted_children: &[i64]) -> Result<()> {
+pub async fn remove_dead_channels(
+    executor: &Pool<Postgres>,
+    deleted_parents: &[i64],
+    deleted_children: &[i64],
+) -> Result<()> {
     let mut transaction = executor
         .begin()
         .await
@@ -439,9 +442,24 @@ pub async fn remove_dead_channels(executor: &Pool<Postgres>, deleted_parents: &[
     let rows_affected = query!(
         "DELETE FROM child_channels WHERE child_id = ANY($1);",
         deleted_children
-    ).execute(executor).await.wrap_err_with(|| eyre!("Failed to remove deleted children!"))?.rows_affected();
+    )
+    .execute(&mut *transaction)
+    .await
+    .wrap_err_with(|| eyre!("Failed to remove deleted children!"))?
+    .rows_affected();
 
     debug!("Deleted {rows_affected} rows in remove_deleted_children!");
-    
+
+    let rows_affected = query!(
+        "DELETE FROM template_channels WHERE channel_id = ANY($1);",
+        deleted_parents
+    )
+    .execute(&mut *transaction)
+    .await
+    .wrap_err_with(|| eyre!("Failed to remove deleted parents!"))?
+    .rows_affected();
+
+    debug!("Deleted {rows_affected} rows in remove_deleted_parents!");
+
     Ok(())
 }
