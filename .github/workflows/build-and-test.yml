@@ -1,0 +1,51 @@
+name: Build and Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+  DATABASE_USER: postgres
+  DATABASE_ROLE: postgres
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: rust
+
+    services:
+      postgres:
+        image: postgres:15.1
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Cache Cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli
+      - name: Setup Database
+        run: sqlx database setup
+      - name: Build
+        run: cargo build --verbose
+      - name: Test
+        run: cargo test --verbose -- --nocapture
