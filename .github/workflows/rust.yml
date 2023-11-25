@@ -19,6 +19,3 @@ jobs:
         with:
           compose-file: "./docker/compose.yaml"
           down-flags: --volumes
-          services: |
-            app
-            db
