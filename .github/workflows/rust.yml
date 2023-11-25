@@ -12,10 +12,23 @@ env:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    container: rust
+
+    services:
+      postgres:
+        image: postgres:15.1
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: isbang/compose-action@v1.5.1
-        with:
-          compose-file: "./.github/workflows/docker/compose.yaml"
-          down-flags: --volumes
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Database
+        run: sqlx database setup
+      - name: Build
+        run: cargo build --verbose
+      - name: Test
+        run: cargo test --verbose
