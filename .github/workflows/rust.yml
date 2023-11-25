@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli
       - name: Setup Database
         run: sqlx database setup
       - name: Build
