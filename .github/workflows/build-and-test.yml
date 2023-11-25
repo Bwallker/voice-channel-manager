@@ -33,8 +33,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Cache sqlx-cli
+        uses: actions/cache@v3
+        id: cache-sqlx-cli
+        with:
+          path: |
+            ~/.cargo/bin/sqlx
+          key: ${{ runner.os }}-sqlx-cli-${{ hashFiles('~/.cargo/bin/sqlx') }}
       - name: Cache Cargo
         uses: actions/cache@v3
+        id: cache-cargo
         with:
           path: |
             ~/.cargo/bin/
@@ -45,9 +53,8 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install sqlx-cli
         run: cargo install sqlx-cli
+        if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
       - name: Setup Database
         run: sqlx database setup
-      - name: Build
-        run: cargo build --verbose
       - name: Test
         run: cargo test --verbose -- --nocapture
