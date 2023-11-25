@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: isbang/compose-action@v1.5.1
         with:
-          compose-file: "rust-docker/compose.yaml"
+          compose-file: "./rust-docker/compose.yaml"
           down-flags: --volumes
           services: |
             app
