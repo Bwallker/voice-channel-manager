@@ -14,7 +14,7 @@ env:
   DATABASE_ROLE: postgres
 
 jobs:
-  build-and-test:
+  test:
     runs-on: ubuntu-latest
 
     services:
