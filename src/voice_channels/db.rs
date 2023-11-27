@@ -225,9 +225,9 @@ struct GetAllChildren {
 pub async fn get_all_children_of_parent(
     executor: &PgPool,
     guild_id: GuildId,
-    channel_id: ChannelId,
+    channels: &[i64],
 ) -> Result<Option<(Parent, Children)>> {
-    debug!("Guild id and channel id in get all children is: {guild_id}, {channel_id}");
+    debug!("Guild id and channel id in get all children is: {guild_id}, {channels:?}");
     let res = query_as_unchecked!(
         GetAllChildren,
         "SELECT child_id, child_number, next_child_number, channel_template, channel_id, capacity
@@ -240,11 +240,11 @@ pub async fn get_all_children_of_parent(
           OR child_channels.guild_id = $1
         )
         AND (
-            channel_id = $2
-            OR child_id = $2
+            channel_id = ANY($2)
+            OR child_id = ANY($2)
         );",
         guild_id.0 as i64,
-        channel_id.0 as i64
+        channels
     )
     .fetch_all(executor)
     .await

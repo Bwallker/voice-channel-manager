@@ -138,7 +138,7 @@ impl<'a> Parser<'a> {
             b'?' => TemplatePart::ConnectedUsersNumber,
             b'c' => TemplatePart::ConnectedUserCapacity,
             _ => return Err(eyre!(
-                "Invalid template content at {}:{}. Expected one of '#', '%', but found '{}'",
+                "Invalid template content at {}:{}. Expected one of '#', '%', '?' or 'c' but found '{}'",
                 self.current_col,
                 self.current_row,
                 self.current_char().unwrap_or('\0')

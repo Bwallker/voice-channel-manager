@@ -2,7 +2,7 @@ use crate::{
     db::{clean_inactive_guilds_from_db, clean_left_guild_from_db},
     util::get_value,
     voice_channels::db::Children,
-    HashMap,
+    HashMap, VoiceStates,
 };
 use eyre::{eyre, Result, WrapErr};
 use if_chain::if_chain;
@@ -10,6 +10,7 @@ use serde_json::Map;
 use serenity::{async_trait, cache::CacheUpdate, model::prelude::*, prelude::*};
 use sqlx::postgres::PgPoolOptions;
 use std::{env::var, ops::Not, sync::Arc};
+use tracing::Instrument;
 
 #[allow(unused_imports)]
 use tracing::{debug, debug_span, error, info, info_span, trace, trace_span};
@@ -77,7 +78,7 @@ impl VoiceChannelManagerEventHandler {
         let Some((parent, children)) = voice_channels::db::get_all_children_of_parent(
             &get_db_handle(&ctx).await,
             channel.guild_id,
-            channel.id,
+            &[channel.id.0 as i64],
         )
         .await
         .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))?
@@ -143,8 +144,7 @@ impl VoiceChannelManagerEventHandler {
     }
 
     async fn ready(&self, ctx: Context, ready: &Ready) -> Result<()> {
-        let ready_span = info_span!("Ready Span");
-        ready_span.in_scope(|| info!("{} is connected!", ready.user.name));
+        info!("{} is connected!", ready.user.name);
 
         let mut lock = ctx.data.write().await;
         lock.insert::<DBConnection>(
@@ -161,6 +161,7 @@ impl VoiceChannelManagerEventHandler {
         lock.insert::<ClientID>(get_client_id());
         lock.insert::<DefaultPrefix>(default_prefix().into());
         lock.insert::<GuildChannels>(Arc::new(RwLock::new(HashMap::default())));
+        lock.insert::<VoiceStates>(Arc::new(RwLock::new(HashMap::default())));
 
         let activity = Some(Activity::watching("you sleep"));
         ctx.shard.set_presence(activity, OnlineStatus::Online);
@@ -170,7 +171,7 @@ impl VoiceChannelManagerEventHandler {
             .wrap_err_with(|| eyre!("initializing next child numbers failed!"))?;
 
         debug!("Finished initializing all guilds!");
-        ready_span.in_scope(|| info!("Preceding to remove all inactive guilds"));
+        info!("Proceeding to remove all inactive guilds");
 
         clean_inactive_guilds_from_db(
             &connection,
@@ -182,7 +183,7 @@ impl VoiceChannelManagerEventHandler {
         )
         .await
         .wrap_err_with(|| eyre!("Cleaning inactive guilds from database failed!"))?;
-        ready_span.in_scope(|| info!("Finished running ready!"));
+        info!("Finished running ready!");
         Ok(())
     }
 
@@ -199,30 +200,40 @@ impl VoiceChannelManagerEventHandler {
 
         info!("Done parsing voice state event!");
 
-        let (&guild_id, &channel_id) = match &parsed_event {
+        let (guild_id, joined_channel_id, left_channel_id) = match &parsed_event {
             ParsedVoiceStateEvent::Joined {
                 joined_channel_id,
                 guild_id,
                 ..
-            } => (guild_id, joined_channel_id),
+            } => (*guild_id, Some(*joined_channel_id), None),
             ParsedVoiceStateEvent::Left {
                 left_channel_id,
                 guild_id,
                 ..
-            } => (guild_id, left_channel_id),
+            } => (*guild_id, None, Some(*left_channel_id)),
             ParsedVoiceStateEvent::Changed {
+                old_channel_id,
                 new_channel_id,
                 guild_id,
                 ..
-            } => (guild_id, new_channel_id),
+            } => (*guild_id, Some(*new_channel_id), Some(*old_channel_id)),
         };
 
         info!("Parsed event: {:#?}", parsed_event);
 
+        let channels_arr = [left_channel_id, joined_channel_id].map(|v| v.unwrap_or(ChannelId(0)).0 as i64);
+
+        let channels: &[i64] = match (left_channel_id, joined_channel_id) {
+            (Some(_), Some(_)) => &channels_arr,
+            (Some(_), None) => &channels_arr[..1],
+            (None, Some(_)) => &channels_arr[1..],
+            (None, None) => &[],
+        };
+
         let Some((parent, children)) = voice_channels::db::get_all_children_of_parent(
             &get_db_handle(&ctx).await,
             guild_id,
-            channel_id,
+            channels,
         )
         .await
         .wrap_err_with(|| eyre!("Retrieving voice channels failed!"))?
@@ -230,7 +241,8 @@ impl VoiceChannelManagerEventHandler {
             return Err(eyre!("No parent found!"));
         };
         info!("Parent: {:?}, children: {:?}", parent, children);
-        if parent.parent_id == channel_id {
+        if Some(parent.parent_id) == left_channel_id || Some(parent.parent_id) == joined_channel_id {
+            let channel_id = parent.parent_id;
             let parent_channel = ctx
                 .cache
                 .guild_channel(parent.parent_id)
@@ -339,7 +351,7 @@ impl VoiceChannelManagerEventHandler {
                 channel_number: child_number,
                 total_children_number,
                 users_connected_capacity: channel.user_limit.ok_or_else(|| {
-                    eyre!("No user limit provided for channel with id {channel_id}!")
+                    eyre!("No user limit provided for channel with id {child_id}!")
                 })?,
                 users_connected_number: channel
                     .members(&ctx.cache)
@@ -437,6 +449,16 @@ impl VoiceChannelManagerEventHandler {
         guild_channels_lock.insert(guild_id, Arc::new(RwLock::new(all_channels)));
         debug!("Guild channels after insert: {guild_channels_lock:?}");
         drop(guild_channels_lock);
+        info!("Updating voice states for guild: {}", guild_id);
+        let mut voice_states = HashMap::default();
+
+        voice_states.extend(guild.voice_states.iter().map(|(k, v)| (*k, v.clone())));
+        info!("Finished updating voice states for guild: {}", guild_id);
+        debug!("Voice states: {voice_states:?}");
+
+        let voice_states_map = get_value::<VoiceStates>(&ctx.data).await;
+        let mut voice_states_lock = voice_states_map.write().await;
+        voice_states_lock.insert(guild_id, Arc::new(RwLock::new(voice_states)));
 
         Ok(())
     }
@@ -464,6 +486,11 @@ impl VoiceChannelManagerEventHandler {
         let guild_channels_map = get_value::<GuildChannels>(&ctx.data).await;
         let mut guild_channels_lock = guild_channels_map.write().await;
         guild_channels_lock.remove(&guild_id);
+
+        let voice_states_map = get_value::<VoiceStates>(&ctx.data).await;
+        let mut voice_states_lock = voice_states_map.write().await;
+        voice_states_lock.remove(&guild_id);
+
         Ok(())
     }
 }
@@ -575,42 +602,66 @@ fn parse_voice_event(
 impl RawEventHandler for VoiceChannelManagerEventHandler {
     async fn raw_event(&self, ctx: Context, event: Event) {
         let event_span = trace_span!("Discord event");
-        event_span.in_scope(|| trace!("Event: {event:#?}"));
-        let res = match event.clone() {
-            Event::Ready(ready) => self.ready(ctx, &ready.ready).await,
-            Event::VoiceStateUpdate(mut voice_state_event) => {
-                let new = voice_state_event.voice_state.clone();
-                let old = new
-                    .guild_id
-                    .and_then(|id| ctx.cache.guild(id))
-                    .and_then(|g| g.voice_states.get(&new.user_id).cloned());
-                voice_state_event.update(&ctx.cache);
-                self.voice_state_update(ctx, old, new).await
+        async move {
+            trace!("Event: {event:#?}");
+            let res = match event.clone() {
+                Event::Ready(ready) => self.ready(ctx, &ready.ready).await,
+                Event::VoiceStateUpdate(mut voice_state_event) => {
+                    let new = voice_state_event.voice_state.clone();
+                    let old = async {
+                        let voice_states_map = get_value::<VoiceStates>(&ctx.data).await;
+                        let lock = voice_states_map.read().await;
+                        let map = lock
+                            .get(&voice_state_event.voice_state.guild_id?)
+                            .unwrap()
+                            .clone();
+                        drop(lock);
+                        let mut lock = map.write().await;
+                        lock.insert(voice_state_event.voice_state.user_id, new.clone())
+                    }
+                    .await;
+                    voice_state_event.update(&ctx.cache);
+                    self.voice_state_update(ctx, old, new)
+                        .instrument(trace_span!("Voice state update"))
+                        .await
+                }
+                Event::MessageCreate(MessageCreateEvent { message, .. }) => {
+                    self.on_message_created(ctx, &message)
+                        .instrument(trace_span!("Message created"))
+                        .await
+                }
+                Event::GuildCreate(guild_create_event) => {
+                    self.on_guild_join(ctx, guild_create_event.guild)
+                        .instrument(trace_span!("Guild join"))
+                        .await
+                }
+                Event::GuildDelete(mut guild_delete_event) => {
+                    let guild = ctx.cache.update(&mut guild_delete_event);
+                    let guild_id = guild_delete_event.guild.id;
+                    self.on_guild_leave(ctx, guild_id, guild)
+                        .instrument(trace_span!("Guild leave"))
+                        .await
+                }
+                Event::ChannelUpdate(channel_update_event) => {
+                    let new = channel_update_event.channel;
+                    let old = ctx.cache.channel(new.id());
+                    self.on_channel_update(ctx, old, new)
+                        .instrument(trace_span!("Channel update"))
+                        .await
+                }
+                Event::ChannelDelete(channel_delete_event) => {
+                    let channel = channel_delete_event.channel;
+                    self.on_channel_delete(ctx, channel)
+                        .instrument(trace_span!("Channel delete"))
+                        .await
+                }
+                _ => Ok(()),
+            };
+            if let Err(err) = res {
+                error!("Error handling event {event:#?}: \n\n\n{err:#?}");
             }
-            Event::MessageCreate(MessageCreateEvent { message, .. }) => {
-                self.on_message_created(ctx, &message).await
-            }
-            Event::GuildCreate(guild_create_event) => {
-                self.on_guild_join(ctx, guild_create_event.guild).await
-            }
-            Event::GuildDelete(mut guild_delete_event) => {
-                let guild = ctx.cache.update(&mut guild_delete_event);
-                let guild_id = guild_delete_event.guild.id;
-                self.on_guild_leave(ctx, guild_id, guild).await
-            }
-            Event::ChannelUpdate(channel_update_event) => {
-                let new = channel_update_event.channel;
-                let old = ctx.cache.channel(new.id());
-                self.on_channel_update(ctx, old, new).await
-            }
-            Event::ChannelDelete(channel_delete_event) => {
-                let channel = channel_delete_event.channel;
-                self.on_channel_delete(ctx, channel).await
-            }
-            _ => Ok(()),
-        };
-        if let Err(err) = res {
-            event_span.in_scope(|| error!("Error handling event {event:#?}: \n\n\n{err:#?}"));
         }
+        .instrument(event_span)
+        .await;
     }
 }

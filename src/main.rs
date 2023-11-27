@@ -12,9 +12,11 @@ use dotenvy::dotenv;
 use eyre::{eyre, Result, WrapErr};
 use sqlx::PgPool;
 use tokio::runtime::Builder;
+use tracing::{Instrument, trace_span};
 #[allow(unused_imports)]
 use tracing::{debug, error, event, info, trace, warn, Level};
-use tracing_subscriber::fmt::time::UtcTime;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::fmt::{format::Pretty, time::UtcTime};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::FmtSubscriber;
 
@@ -40,6 +42,12 @@ struct GuildChannels;
 
 impl TypeMapKey for GuildChannels {
     type Value = Arc<RwLock<HashMap<GuildId, Arc<RwLock<HashMap<Parent, Children>>>>>>;
+}
+
+struct VoiceStates;
+
+impl TypeMapKey for VoiceStates {
+    type Value = Arc<RwLock<HashMap<GuildId, Arc<RwLock<HashMap<UserId, VoiceState>>>>>>;
 }
 
 pub async fn get_db_handle(ctx: &Context) -> PgPool {
@@ -115,6 +123,8 @@ fn main() -> Result<()> {
                 eyre!("Parsing tracing filter from environment variable `RUST_LOG` failed!")
             })?,
         )
+        .finish()
+        .with(ErrorLayer::new(Pretty::default()))
         .try_init()
         .map_err(|e| eyre!(e))
         .wrap_err_with(|| eyre!("Initializing tracing failed!"))?;
@@ -128,7 +138,7 @@ fn main() -> Result<()> {
         .enable_all()
         .build()
         .wrap_err_with(|| eyre!("Failed to start tokio runtime"))?
-        .block_on(start())?;
+        .block_on(start().instrument(trace_span!("Start span")))?;
 
     Ok(())
 }
