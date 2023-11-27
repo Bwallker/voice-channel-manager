@@ -101,4 +101,4 @@ The bot is configured using environment variables.
 1. Clone the repository.
 2. Create a .env file in the root of the repository and fill it with the required environment variables. See the [Configuration](#configuration) section for more details. A .env file is not required if you set the environment variables in some other way.
 3. Create and migrate the database by running `sqlx database setup` in the root of the repository.
-4. Run the bot by running `cargo run` or `cargo run --release` in the root of the repository.
+4. Run the bot by running `cargo run` or `cargo run --release` in the root of the repository. You can also use the included dockerfile to run the bot in a docker container. Please note that the database must be run separately if you use the dockerfile.
