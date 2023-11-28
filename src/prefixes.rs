@@ -1,2 +1,2 @@
-pub mod commands;
-pub mod db;
+pub(crate) mod commands;
+pub(crate) mod db;

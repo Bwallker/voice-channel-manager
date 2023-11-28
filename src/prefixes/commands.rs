@@ -9,7 +9,7 @@ use serenity::framework::standard::{
 };
 use tracing::{info, trace_span, Instrument};
 
-use crate::get_db_handle;
+use crate::{get_db_handle, DropExt};
 
 #[command]
 #[description("Changes the prefix for the server.")]
@@ -22,7 +22,7 @@ use crate::get_db_handle;
 async fn change_prefix(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let span = trace_span!("change_prefix span");
     async move {
-        args.trimmed().quoted();
+        args.trimmed().quoted().drop();
         let new_prefix = args.current().ok_or_else(|| eyre!("No prefix provided!"))?;
         info!("new_prefix: `{new_prefix}`");
         super::db::set_prefix(
@@ -41,7 +41,7 @@ async fn change_prefix(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
                 ),
             )
             .await
-            .wrap_err_with(|| "Failed to send message!")?;
+            .wrap_err_with(|| "Failed to send message!")?.drop();
 
         Ok(())
     }
@@ -71,7 +71,7 @@ async fn reset_prefix(ctx: &Context, msg: &Message, _args: Args) -> CommandResul
                 format!("{}: Prefix successfully reset!", msg.author.mention()),
             )
             .await
-            .wrap_err_with(|| "Failed to send message!")?;
+            .wrap_err_with(|| "Failed to send message!")?.drop();
 
         Ok(())
     }

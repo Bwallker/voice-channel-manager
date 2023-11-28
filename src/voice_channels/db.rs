@@ -1,4 +1,4 @@
-use crate::{HashMap, HashSet};
+use crate::{DropExt, HashMap, HashSet};
 use core::hash::Hash;
 use eyre::{eyre, Result, WrapErr};
 use if_chain::if_chain;
@@ -10,7 +10,7 @@ use std::hash::Hasher;
 use tracing::{debug, error, info, trace, warn};
 
 #[allow(dead_code)]
-pub async fn get_template(executor: &PgPool, guild_id: GuildId) -> Result<Option<String>> {
+pub(crate) async fn get_template(executor: &PgPool, guild_id: GuildId) -> Result<Option<String>> {
     query!(
         "SELECT channel_template FROM template_channels WHERE guild_id = $1;",
         guild_id.0 as i64
@@ -21,7 +21,7 @@ pub async fn get_template(executor: &PgPool, guild_id: GuildId) -> Result<Option
     .map(|row| row.map(|row| row.channel_template))
 }
 
-pub async fn set_template(
+pub(crate) async fn set_template(
     executor: &PgPool,
     channel_id: ChannelId,
     guild_id: GuildId,
@@ -35,7 +35,7 @@ pub async fn set_template(
     ).execute(executor).await.wrap_err_with(|| eyre!("Setting template in database for server with id {guild_id} failed!")).map(|_| ())
 }
 
-pub async fn delete_template(
+pub(crate) async fn delete_template(
     executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
@@ -75,7 +75,7 @@ pub async fn delete_template(
     Ok(())
 }
 
-pub async fn register_child(
+pub(crate) async fn register_child(
     executor: &PgPool,
     guild_id: GuildId,
     parent_id: ChannelId,
@@ -117,7 +117,7 @@ pub async fn register_child(
 }
 
 #[allow(dead_code)]
-pub async fn delete_child(
+pub(crate) async fn delete_child(
     executor: &PgPool,
     guild_id: GuildId,
     parent_id: ChannelId,
@@ -137,7 +137,7 @@ pub async fn delete_child(
     .map(|_| ())
 }
 
-pub async fn change_capacity(
+pub(crate) async fn change_capacity(
     executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
@@ -156,43 +156,40 @@ pub async fn change_capacity(
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Child {
-    pub child_id: ChannelId,
-    pub parent_id: ChannelId,
-    pub child_number: u64,
-    pub total_children_number: u64,
-    pub template: String,
+pub(crate) struct Child {
+    pub(crate) id: ChannelId,
+    pub(crate) number: u64,
+    pub(crate) total_children_number: u64,
+    pub(crate) template: String,
 }
 
 impl Hash for Child {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        self.child_id.hash(hasher)
+        self.id.hash(hasher);
     }
 }
 
 impl PartialEq for Child {
     fn eq(&self, other: &Self) -> bool {
-        self.child_id == other.child_id
+        self.id == other.id
     }
 }
 
 impl Eq for Child {}
 
-pub type Children = HashSet<Child>;
+pub(crate) type Children = HashSet<Child>;
 
 #[derive(Debug, Clone, Default)]
-pub struct Parent {
-    pub parent_id: ChannelId,
-    pub total_children_number: u64,
-    pub template: String,
-    pub capacity: Option<u64>,
+pub(crate) struct Parent {
+    pub(crate) id: ChannelId,
+    pub(crate) template: String,
+    pub(crate) capacity: Option<u64>,
 }
 
 impl From<ChannelId> for Parent {
     fn from(parent_id: ChannelId) -> Self {
         Self {
-            parent_id,
-            total_children_number: 0,
+            id: parent_id,
             template: String::new(),
             capacity: None,
         }
@@ -201,13 +198,13 @@ impl From<ChannelId> for Parent {
 
 impl Hash for Parent {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        self.parent_id.hash(hasher)
+        self.id.hash(hasher);
     }
 }
 
 impl PartialEq for Parent {
     fn eq(&self, other: &Self) -> bool {
-        self.parent_id == other.parent_id
+        self.id == other.id
     }
 }
 
@@ -222,7 +219,7 @@ struct GetAllChildren {
     capacity: Option<i64>,
 }
 
-pub async fn get_all_children_of_parent(
+pub(crate) async fn get_all_children_of_parent(
     executor: &PgPool,
     guild_id: GuildId,
     channels: &[i64],
@@ -262,15 +259,12 @@ pub async fn get_all_children_of_parent(
 
     let parent_id = ChannelId(parent_row.channel_id as u64);
 
-    let total_children_number = parent_row.next_child_number as u64 - 1;
-
-    let template = parent_row.channel_template.to_owned();
+    let template = parent_row.channel_template.clone();
 
     let capacity = parent_row.capacity.map(|v| v as u64);
 
     let parent = Parent {
-        parent_id,
-        total_children_number,
+        id: parent_id,
         template,
         capacity,
     };
@@ -283,13 +277,11 @@ pub async fn get_all_children_of_parent(
 
             let total_children_number = row.next_child_number as u64 - 1;
             let template = row.channel_template;
-            let parent_id = ChannelId(row.channel_id as u64);
             Some(Child {
-                child_id,
-                child_number,
+                id: child_id,
+                number: child_number,
                 total_children_number,
                 template,
-                parent_id,
             })
         })
         .collect();
@@ -307,7 +299,7 @@ struct GetAllChannels {
     capacity: Option<i64>,
 }
 
-pub async fn get_all_channels_in_guild(
+pub(crate) async fn get_all_channels_in_guild(
     executor: &PgPool,
     guild_id: GuildId,
 ) -> Result<HashMap<Parent, Children>> {
@@ -334,8 +326,7 @@ pub async fn get_all_channels_in_guild(
         let capacity = row.capacity.map(|v| v as u64);
 
         let parent = Parent {
-            parent_id,
-            total_children_number: next_child_number - 1,
+            id: parent_id,
             template: template.clone(),
             capacity,
         };
@@ -349,13 +340,12 @@ pub async fn get_all_channels_in_guild(
             if let Some(child_number) = child_number;
             then {
                 let child = Child {
-                    parent_id,
-                    child_id,
-                    child_number,
+                    id: child_id,
+                    number: child_number,
                     total_children_number: next_child_number,
                     template,
                 };
-                children.insert(child);
+                children.insert(child).drop();
             }
         }
     }
@@ -363,7 +353,7 @@ pub async fn get_all_channels_in_guild(
     Ok(parent_channels)
 }
 
-pub async fn update_next_child_number(
+pub(crate) async fn update_next_child_number(
     executor: &PgPool,
     parent_id: ChannelId,
     child_id: ChannelId,
@@ -409,7 +399,7 @@ pub async fn update_next_child_number(
     Ok(())
 }
 
-pub async fn init_next_child_number(executor: &PgPool) -> Result<()> {
+pub(crate) async fn init_next_child_number(executor: &PgPool) -> Result<()> {
     let rows_affected = query!(
         "
         WITH next AS (
@@ -430,7 +420,7 @@ pub async fn init_next_child_number(executor: &PgPool) -> Result<()> {
     Ok(())
 }
 
-pub async fn remove_dead_channels(
+pub(crate) async fn remove_dead_channels(
     executor: &PgPool,
     deleted_parents: &[i64],
     deleted_children: &[i64],

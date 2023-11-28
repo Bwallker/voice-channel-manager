@@ -3,17 +3,17 @@ use eyre::{eyre, Result, WrapErr};
 use serenity::{client::Context, model::channel::GuildChannel};
 use std::fmt::Write;
 
-pub struct UpdaterContext<'template, 'channel, 'ctx> {
-    pub template: &'template Template,
-    pub channel: &'channel mut GuildChannel,
-    pub context: &'ctx Context,
-    pub channel_number: u64,
-    pub total_children_number: u64,
-    pub users_connected_number: u64,
-    pub users_connected_capacity: u64,
+pub(crate) struct UpdaterContext<'template, 'channel, 'ctx> {
+    pub(crate) template: &'template Template,
+    pub(crate) channel: &'channel mut GuildChannel,
+    pub(crate) context: &'ctx Context,
+    pub(crate) channel_number: u64,
+    pub(crate) total_children_number: u64,
+    pub(crate) users_connected_number: u64,
+    pub(crate) users_connected_capacity: u64,
 }
 
-pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_>) -> Result<()> {
+pub(crate) async fn update_channel(ctx: UpdaterContext<'_, '_, '_>) -> Result<()> {
     let mut new_name = String::new();
 
     for part in &ctx.template.parts {
@@ -28,14 +28,15 @@ pub async fn update_channel(ctx: UpdaterContext<'_, '_, '_>) -> Result<()> {
             TemplatePart::ConnectedUsersNumber => {
                 write!(new_name, "{}", ctx.users_connected_number)
                     .map_err(|e| eyre!(e))
-                    .wrap_err_with(|| eyre!("Writing connected users count into string failed!"))?
+                    .wrap_err_with(|| eyre!("Writing connected users count into string failed!"))?;
             }
+
             TemplatePart::ConnectedUserCapacity => {
                 write!(new_name, "{}", ctx.users_connected_capacity)
                     .map_err(|e| eyre!(e))
                     .wrap_err_with(|| {
                         eyre!("Writing connected users capacity into string failed!")
-                    })?
+                    })?;
             }
         }
     }

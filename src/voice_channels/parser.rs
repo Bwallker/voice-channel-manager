@@ -49,19 +49,19 @@ impl<'a> Parser<'a> {
 
     fn parse(mut self) -> Result<Template> {
         while self.current_idx < self.input.len() {
-            if self.current_byte() != Some(b'{') {
-                let res = self.parse_string().wrap_err_with(|| {
+            if self.current_byte() == Some(b'{') {
+                let res = self.parse_braces().wrap_err_with(|| {
                     eyre!(
-                        "Failed to parse string at {}:{}",
+                        "Failed to parse braces at {}:{}",
                         self.current_col,
                         self.current_row
                     )
                 })?;
                 self.parts.push(res);
             } else {
-                let res = self.parse_braces().wrap_err_with(|| {
+                let res = self.parse_string().wrap_err_with(|| {
                     eyre!(
-                        "Failed to parse braces at {}:{}",
+                        "Failed to parse string at {}:{}",
                         self.current_col,
                         self.current_row
                     )
@@ -151,7 +151,7 @@ impl<'a> Parser<'a> {
 
 #[non_exhaustive]
 #[derive(PartialEq, Eq, Debug)]
-pub enum TemplatePart {
+pub(crate) enum TemplatePart {
     ChannelNumber,
     ChildrenInTotal,
     ConnectedUsersNumber,
@@ -161,11 +161,11 @@ pub enum TemplatePart {
 
 #[non_exhaustive]
 #[derive(PartialEq, Eq, Debug)]
-pub struct Template {
-    pub parts: Vec<TemplatePart>,
+pub(crate) struct Template {
+    pub(crate) parts: Vec<TemplatePart>,
 }
 
-pub fn parse_template(template: &str) -> Result<Template> {
+pub(crate) fn parse_template(template: &str) -> Result<Template> {
     Parser::new(template).parse()
 }
 
@@ -188,6 +188,6 @@ mod tests {
         parts: vec![TemplatePart::String("Röstkanal {".into()), TemplatePart::ChannelNumber, TemplatePart::String("}#".into())]
     })]
     fn test_parses(#[case] input: &str, #[case] expected: Template) {
-        assert_eq!(expected, parse_template(input).unwrap(),)
+        assert_eq!(expected, parse_template(input).unwrap(),);
     }
 }

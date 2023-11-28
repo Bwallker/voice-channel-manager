@@ -1,12 +1,51 @@
+/*!
+ * Main file of the voice channel manager bot.
+ */
+
+#![cfg_attr(feature = "nightly-features", feature(must_not_suspend))]
+#![cfg_attr(feature = "nightly-features", warn(must_not_suspend))]
+#![cfg_attr(
+    feature = "nightly-features",
+    feature(non_exhaustive_omitted_patterns_lint)
+)]
+#![cfg_attr(feature = "nightly-features", warn(non_exhaustive_omitted_patterns))]
+
 use std::{
     collections::HashSet as SlowSet,
     env::var,
     str::FromStr,
     sync::{Arc, OnceLock},
 };
+/// Utility trait to drop a value. Semantically equivalent to `std::mem::drop`.
+pub(crate) trait DropExt {
+    /// Method version of `std::mem::drop`.
+    fn drop(self);
+}
 
-pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
-pub type HashSet<K> = rustc_hash::FxHashSet<K>;
+impl<T> DropExt for T {
+    fn drop(self) {}
+}
+
+pub(crate) trait ResultDropExt {
+    type NoOk;
+    type NoErr;
+    fn drop_ok(self) -> Self::NoOk;
+    fn drop_err(self) -> Self::NoErr;
+}
+
+impl<T, E> ResultDropExt for Result<T, E> {
+    type NoOk = Result<(), E>;
+    type NoErr = Result<T, ()>;
+    fn drop_ok(self) -> Self::NoOk {
+        self.map(|_| ())
+    }
+    fn drop_err(self) -> Self::NoErr {
+        self.map_err(|_| ())
+    }
+}
+
+pub(crate) type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
+pub(crate) type HashSet<K> = rustc_hash::FxHashSet<K>;
 
 use dotenvy::dotenv;
 use eyre::{eyre, Result, WrapErr};
@@ -50,11 +89,11 @@ impl TypeMapKey for VoiceStates {
     type Value = Arc<RwLock<HashMap<GuildId, Arc<RwLock<HashMap<UserId, VoiceState>>>>>>;
 }
 
-pub async fn get_db_handle(ctx: &Context) -> PgPool {
+pub(crate) async fn get_db_handle(ctx: &Context) -> PgPool {
     ctx.data.read().await.get::<DBConnection>().unwrap().clone()
 }
 
-pub fn get_client_id() -> UserId {
+pub(crate) fn get_client_id() -> UserId {
     static ID: OnceLock<UserId> = OnceLock::new();
     *ID.get_or_init(|| {
         var("DISCORD_CLIENT_ID")
@@ -66,7 +105,7 @@ pub fn get_client_id() -> UserId {
     })
 }
 
-pub fn default_prefix() -> &'static str {
+pub(crate) fn default_prefix() -> &'static str {
     static PREFIX: OnceLock<&'static str> = OnceLock::new();
     PREFIX.get_or_init(|| {
         get_default_prefix()
@@ -116,7 +155,7 @@ fn main() -> Result<()> {
             EnvFilter::from_str(
                 rust_log
                     .as_ref()
-                    .map(|s| s.as_str())
+                    .map(String::as_str)
                     .unwrap_or("voice_channel_manager=debug,info"),
             )
             .wrap_err_with(|| {
@@ -165,7 +204,8 @@ async fn unrecognized_command_hook(ctx: &Context, message: &Message, command: &s
         )
         .await
         .wrap_err_with(|| eyre!("Sending message failed!"))
-        .unwrap();
+        .unwrap()
+        .drop();
 }
 
 #[hook]
@@ -200,7 +240,8 @@ async fn on_dispatch_error_hook(
         )
         .await
         .wrap_err_with(|| eyre!("Sending message failed!"))
-        .unwrap();
+        .unwrap()
+        .drop();
 }
 
 #[hook]
@@ -229,7 +270,8 @@ async fn on_after_command_hook(
             )
             .await
             .wrap_err_with(|| eyre!("Failed to send message!"))
-            .unwrap();
+            .unwrap()
+            .drop();
     }
 }
 
@@ -246,7 +288,9 @@ async fn help_handler(
     groups: &[&'static CommandGroup],
     owners: SlowSet<UserId>,
 ) -> CommandResult {
-    let _ = with_embeds(context, msg, args, help_options, groups, owners).await?;
+    with_embeds(context, msg, args, help_options, groups, owners)
+        .await?
+        .drop();
     Ok(())
 }
 

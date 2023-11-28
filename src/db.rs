@@ -8,7 +8,7 @@ use sqlx::prelude::*;
 use sqlx::{query, PgPool};
 use tracing::info;
 
-pub async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> Result<()> {
+pub(crate) async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> Result<()> {
     info!("Cleaning guild with ID `{guild_id}` from database!");
 
     let mut transaction = executor.begin().await.wrap_err_with(|| {
@@ -27,7 +27,7 @@ pub async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> R
         info!(
             "Finished deleting {} rows from child_channels",
             res.rows_affected()
-        )
+        );
     })?;
 
     query!(
@@ -43,7 +43,7 @@ pub async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> R
         info!(
             "Finished deleting {} rows from template_channels",
             res.rows_affected()
-        )
+        );
     })?;
 
     query!(
@@ -59,7 +59,7 @@ pub async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> R
         info!(
             "Finished deleting {} rows from prefixes",
             res.rows_affected()
-        )
+        );
     })?;
 
     transaction.commit().await.wrap_err_with(|| {
@@ -71,7 +71,7 @@ pub async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> R
     Ok(())
 }
 
-pub async fn clean_inactive_guilds_from_db(
+pub(crate) async fn clean_inactive_guilds_from_db(
     executor: &PgPool,
     guilds_to_keep: &[i64],
 ) -> Result<()> {
@@ -103,7 +103,7 @@ pub async fn clean_inactive_guilds_from_db(
         info!(
             "Finished deleting {} rows from template_channels",
             res.rows_affected()
-        )
+        );
     })?;
 
     query!("DELETE FROM prefixes WHERE NOT guild_id = ANY($1);", guilds_to_keep)
@@ -116,7 +116,7 @@ pub async fn clean_inactive_guilds_from_db(
             info!(
                 "Finished deleting {} rows from prefixes",
                 res.rows_affected()
-            )
+            );
         })?;
 
     transaction.commit().await.wrap_err_with(|| {

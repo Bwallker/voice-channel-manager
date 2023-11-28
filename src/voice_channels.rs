@@ -1,4 +1,4 @@
-pub mod commands;
-pub mod db;
-pub mod parser;
-pub mod updater;
+pub(crate) mod commands;
+pub(crate) mod db;
+pub(crate) mod parser;
+pub(crate) mod updater;

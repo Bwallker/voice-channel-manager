@@ -2,14 +2,27 @@
 name = "voice-channel-manager"
 version = "0.1.0"
 edition = "2021"
+description = "A Discord bot that manages voice channels."
+repository = "https://www.github.com/bwallker/voice-channel-manager"
+license-file = "LICENSE"
+keywords = ["discord", "bot", "voice", "channel", "manager"]
+categories = ["command-line-utilities"]
+
+[features]
+default = []
+nightly-features = []
+beta-features = []
 
 [lints.clippy]
 cargo = "warn"
 pedantic = "warn"
+cast-possible-wrap = "allow"
+cast-sign-loss = "allow"
 perf = "warn"
 
 
 # Enable provenance lints when strict provenance is stable
+# Enable must-not-suspend and nont-exhaustive-omitted-patterns when they are stable
 [lints.rust]
 absolute-paths-not-starting-with-crate = "forbid"
 elided-lifetimes-in-paths = "warn"
@@ -21,8 +34,8 @@ macro-use-extern-crate = "warn"
 missing-abi = "forbid"
 missing-debug-implementations = "warn"
 missing-docs = "warn"
-must-not-suspend = "forbid"
-non-exhaustive-omitted-patterns = "warn"
+# must-not-suspend = "forbid"
+# non-exhaustive-omitted-patterns = "warn"
 pointer-structural-match = "forbid"
 single-use-lifetimes = "warn"
 trivial-casts = "warn"
@@ -44,7 +57,6 @@ dotenvy = "0.15.7"
 eyre = "0.6.8"
 futures = "0.3.29"
 if_chain = "1.0.2"
-poise = "0.5.7"
 rustc-hash = "1.1.0"
 serde_json = "1.0.107"
 serenity = { version = "0.11.6", features = [] }
