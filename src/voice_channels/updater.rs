@@ -36,11 +36,11 @@ impl fmt::Debug for SerenityContext<'_,> {
 }
 #[derive(Debug,)]
 pub(crate) struct UpdaterContext<'template, 'channel, 'ctx,> {
-    pub(crate) template:                 &'template Template,
-    pub(crate) channel:                  &'channel mut GuildChannel,
-    pub(crate) context:                  SerenityContext<'ctx,>,
-    pub(crate) channel_number:           u64,
-    pub(crate) total_children_number:    u64,
+    pub(crate) template:              &'template Template,
+    pub(crate) channel:               &'channel mut GuildChannel,
+    pub(crate) context:               SerenityContext<'ctx,>,
+    pub(crate) channel_number:        u64,
+    pub(crate) total_children_number: u64,
 }
 
 pub(crate) async fn update_channel(ctx: UpdaterContext<'_, '_, '_,>,) -> Result<(),> {
