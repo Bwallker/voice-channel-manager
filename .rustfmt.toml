@@ -1,0 +1,5 @@
+rust-block-trailing-comma = true
+use-try-shorthand = true
+tab-spaces = 2
+newline-style = "Unix"
+use-small-heuristics = false
