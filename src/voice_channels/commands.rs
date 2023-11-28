@@ -253,7 +253,14 @@ async fn clear_capacity(ctx: &Context, msg: &Message, mut args: Args,) -> Comman
 #[description("Lists all template channels and their children in your guild.")]
 #[usage("<prefix>/list_template_channels")]
 #[example("vc/list_template_channels")]
-#[aliases("list_template", "list_templates", "list_template_channel", "list")]
+#[aliases(
+    "list_template",
+    "list_templates",
+    "list_template_channel",
+    "list",
+    "list_channel",
+    "list_channels"
+)]
 #[only_in(guild)]
 #[num_args(0)]
 async fn list_template_channels(ctx: &Context, msg: &Message, _args: Args,) -> CommandResult {

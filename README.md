@@ -56,6 +56,22 @@ Changes the capacity of child channels created by the given parent channel. Requ
 
 `vc/change_cap`, `vc/set_cap`, `vc/set_capacity`
 
+##### `vc/reset_capacity`
+
+Resets the capacity of child channels created by the given parent channel to be unlimited. Requires one argument, the ID of the channel.
+
+###### Aliases
+
+`vc/reset_cap`
+
+##### `vc/list_template_channels`
+
+Lists all the template channels in you guild. Ordered by parent.
+
+###### Aliases
+
+`vc/list_template`, `vc/list_templates`, `vc/list_template_channel`, `vc/list`, `vc/list_channels`, `vc/list_channel`
+
 #### Prefix commands
 
 ##### `vc/change_prefix`
