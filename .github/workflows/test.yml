@@ -51,6 +51,8 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Update Cargo
+        run: rustup update
       - name: Install sqlx-cli
         run: cargo install sqlx-cli
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
