@@ -1,4 +1,4 @@
-name: Test
+name: Format, Lint and Test
 
 on:
   push:
@@ -14,7 +14,7 @@ env:
   DATABASE_ROLE: postgres
 
 jobs:
-  test:
+  format-lint-test:
     runs-on: ubuntu-latest
 
     services:
@@ -53,6 +53,8 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Update Cargo
         run: rustup update
+      - name: Install nightly
+        run: rustup install nightly
       - name: Install sqlx-cli
         run: cargo install sqlx-cli
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
