@@ -58,5 +58,7 @@ jobs:
         run: sqlx database setup
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --verbose -- --nocapture
