@@ -59,8 +59,8 @@ jobs:
       - name: Setup Database
         run: sqlx database setup
       - name: Format
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo +nightly clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --verbose -- --nocapture
