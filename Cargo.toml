@@ -10,6 +10,7 @@ categories = ["command-line-utilities"]
 
 [profile.release]
 lto = "fat"
+codegen-units = 1
 
 [features]
 default = []
