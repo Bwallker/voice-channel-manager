@@ -10,7 +10,6 @@ use if_chain::if_chain;
 use serenity::model::prelude::*;
 use sqlx::{
     query,
-    query_as_unchecked,
     PgPool,
 };
 #[allow(unused_imports)]
@@ -197,6 +196,22 @@ pub(crate) async fn change_capacity(
     .map(|_| (),)
 }
 
+pub(crate) async fn clear_capacity(
+    executor: &PgPool,
+    guild_id: GuildId,
+    channel_id: ChannelId,
+) -> Result<(),> {
+    query!(
+        "UPDATE template_channels SET capacity = NULL WHERE guild_id = $1 AND channel_id = $2;",
+        guild_id.0 as i64,
+        channel_id.0 as i64
+    )
+    .execute(executor,)
+    .await
+    .wrap_err_with(|| eyre!("Clearing capacity in database for server with id {guild_id} failed!"),)
+    .map(|_| (),)
+}
+
 #[derive(Debug, Clone, Default,)]
 pub(crate) struct Child {
     pub(crate) id:                    ChannelId,
@@ -251,15 +266,6 @@ impl PartialEq for Parent {
 }
 
 impl Eq for Parent {}
-#[derive(Debug,)]
-struct GetAllChildren {
-    child_id:          Option<i64,>,
-    child_number:      Option<i64,>,
-    next_child_number: i64,
-    channel_template:  String,
-    channel_id:        i64,
-    capacity:          Option<i64,>,
-}
 
 pub(crate) async fn get_all_children_of_parent(
     executor: &PgPool,
@@ -267,9 +273,9 @@ pub(crate) async fn get_all_children_of_parent(
     channels: &[i64],
 ) -> Result<Option<(Parent, Children,),>,> {
     debug!("Guild id and channel id in get all children is: {guild_id}, {channels:?}");
-    let res = query_as_unchecked!(
-        GetAllChildren,
-        "SELECT child_id, child_number, next_child_number, channel_template, channel_id, capacity
+    let res = query!(
+        r#"
+        SELECT child_id as "child_id?", child_number as "child_number?", next_child_number, channel_template, channel_id, capacity
         FROM template_channels
         LEFT JOIN child_channels
         ON parent_id = channel_id
@@ -281,7 +287,8 @@ pub(crate) async fn get_all_children_of_parent(
         AND (
             channel_id = ANY($2)
             OR child_id = ANY($2)
-        );",
+        );
+        "#,
         guild_id.0 as i64,
         channels
     )
@@ -330,17 +337,6 @@ pub(crate) async fn get_all_children_of_parent(
 
     Ok(Some((parent, children,),),)
 }
-
-#[derive(Debug,)]
-struct GetAllChannels {
-    channel_template:  String,
-    channel_id:        i64,
-    child_id:          Option<i64,>,
-    child_number:      Option<i64,>,
-    next_child_number: i64,
-    capacity:          Option<i64,>,
-}
-
 pub(crate) async fn get_all_channels_in_guild(
     executor: &PgPool,
     guild_id: GuildId,
@@ -351,11 +347,13 @@ pub(crate) async fn get_all_channels_in_guild(
         .await
         .wrap_err_with(|| eyre!("Failed to start a transaction!"),)?;
 
-    let res = query_as_unchecked!(
-        GetAllChannels,
-        "SELECT channel_template, channel_id, child_id, child_number, next_child_number, capacity \
-         FROM template_channels LEFT JOIN child_channels ON template_channels.channel_id = \
-         child_channels.parent_id WHERE template_channels.guild_id = $1;",
+    let res = query!(
+        r#"
+        SELECT channel_template, channel_id, child_id as "child_id?", child_number as "child_number?", next_child_number, capacity 
+        FROM template_channels
+        LEFT JOIN child_channels ON template_channels.channel_id = child_channels.parent_id
+        WHERE template_channels.guild_id = $1;
+        "#,
         guild_id.0 as i64
     )
     .fetch_all(&mut *transaction,)

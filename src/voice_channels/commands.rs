@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use color_eyre::Section;
 use eyre::{
     eyre,
@@ -162,7 +164,7 @@ async fn create_channel(ctx: &Context, msg: &Message, mut args: Args,) -> Comman
 }
 
 #[command]
-#[description("Changes the capacity for generated channels for a template channel.")]
+#[description("Changes the capacity for generated channels of a template channel.")]
 #[usage("<prefix>/change_capacity <channel id> <capacity>")]
 #[example("vc/change_capacity 1234567890 42")]
 #[aliases("change_cap", "set_cap", "set_capacity")]
@@ -206,6 +208,98 @@ async fn change_capacity(ctx: &Context, msg: &Message, mut args: Args,) -> Comma
     .await
 }
 
+#[command]
+#[description("Clears the set capacity for generated channels of a template channel.")]
+#[usage("<prefix>/clear_capacity <channel id>")]
+#[example("vc/clear_capacity 1234567890")]
+#[aliases("clear_cap")]
+#[only_in(guild)]
+#[num_args(1)]
+#[required_permissions("MANAGE_CHANNELS")]
+async fn clear_capacity(ctx: &Context, msg: &Message, mut args: Args,) -> CommandResult {
+    let span = trace_span!("clear_capacity span");
+    async move {
+        args.trimmed().quoted().drop();
+        let channel_id = args.single_quoted::<ChannelId>().wrap_err_with(|| {
+            eyre!("Failed to parse channel id!").suggestion("Channel ID must be a valid integer.",)
+        },)?;
+        let guild_id = msg
+            .guild_id
+            .ok_or_else(|| eyre!("Guild ID was missing!. This should be impossible!"),)?;
+
+        super::db::clear_capacity(&get_db_handle(ctx,).await, guild_id, channel_id,)
+            .await
+            .wrap_err_with(|| eyre!("Failed at clearing capacity!"),)?;
+
+        msg.channel_id
+            .say(
+                &ctx.http,
+                format!(
+                    "{} - Successfully cleared capacity for channel with ID {channel_id}!",
+                    msg.author.mention()
+                ),
+            )
+            .await
+            .wrap_err_with(|| eyre!("Failed to send message!"),)?
+            .drop();
+        info!("Cleared capacity for channel with ID {channel_id}!");
+        Ok((),)
+    }
+    .instrument(span,)
+    .await
+}
+
+#[command]
+#[description("Lists all template channels and their children in your guild.")]
+#[usage("<prefix>/list_template_channels")]
+#[example("vc/list_template_channels")]
+#[aliases("list_template", "list_templates", "list_template_channel", "list")]
+#[only_in(guild)]
+#[num_args(0)]
+async fn list_template_channels(ctx: &Context, msg: &Message, _args: Args,) -> CommandResult {
+    let span = trace_span!("list_template_channels span");
+    async move {
+        let guild_id = msg
+            .guild_id
+            .ok_or_else(|| eyre!("Guild ID was missing!. This should be impossible!"),)?;
+        let all_channels =
+            super::db::get_all_channels_in_guild(&get_db_handle(ctx,).await, guild_id,)
+                .await
+                .wrap_err_with(|| {
+                    eyre!("Failed to get all channels in guild in list_template_channels!")
+                },)?;
+        let mut message = format!("{}:\n`", msg.author.mention(),);
+        for (parent_number, (parent, children,),) in (1..=all_channels.len()).zip(&all_channels,) {
+            let channel = ctx.cache.channel(parent.id,).and_then(Channel::guild,);
+            let parent_name = channel.as_ref().map_or("[Name not found]", |c| c.name(),);
+            writeln!(message, "\tParent {parent_number}: \"{parent_name}\"")
+                .wrap_err_with(|| eyre!("Failed to write parent name to message!"),)?;
+            for child in children {
+                let channel = ctx.cache.channel(child.id,).and_then(Channel::guild,);
+                let child_number = child.number;
+                let child_name = channel.as_ref().map_or("[Name not found]", |c| c.name(),);
+                writeln!(message, "\t\tChild {child_number}: \"{child_name}\"")
+                    .wrap_err_with(|| eyre!("Failed to write child name to message!"),)?;
+            }
+        }
+        message.push('`',);
+        msg.channel_id
+            .say(&ctx.http, message,)
+            .await
+            .wrap_err_with(|| eyre!("Failed to send message!"),)?
+            .drop();
+        Ok((),)
+    }
+    .instrument(span,)
+    .await
+}
+
 #[group("Template channels")]
-#[commands(alter_template, create_channel, change_capacity)]
+#[commands(
+    alter_template,
+    create_channel,
+    change_capacity,
+    clear_capacity,
+    list_template_channels
+)]
 struct TemplateChannels;

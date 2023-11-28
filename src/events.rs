@@ -13,7 +13,11 @@ use eyre::{
 };
 use futures::future::join_all;
 use if_chain::if_chain;
-use serde_json::Map;
+use serde_json::{
+    Map,
+    Number,
+    Value,
+};
 use serenity::{
     async_trait,
     cache::CacheUpdate,
@@ -50,7 +54,10 @@ use crate::{
         self,
         db::Children,
         parser::parse_template,
-        updater::UpdaterContext,
+        updater::{
+            SerenityContext,
+            UpdaterContext,
+        },
     },
     ClientID,
     DBConnection,
@@ -160,13 +167,8 @@ impl VoiceChannelManagerEventHandler {
             voice_channels::db::update_next_child_number(&db_handle, parent.id, child.id,)
                 .await
                 .wrap_err_with(|| eyre!("Failed to update next_channel_number!"),)?;
-            voice_channels::db::delete_child(
-                &get_db_handle(&ctx,).await,
-                channel.guild_id,
-                parent.id,
-                channel.id,
-            )
-            .await
+            voice_channels::db::delete_child(&db_handle, channel.guild_id, parent.id, channel.id,)
+                .await
         }
     }
 
@@ -279,19 +281,16 @@ impl VoiceChannelManagerEventHandler {
             | (None, None,) => &[],
         };
 
-        let Some((parent, children,),) = voice_channels::db::get_all_children_of_parent(
+        let (parent, children,) = voice_channels::db::get_all_children_of_parent(
             &get_db_handle(&ctx,).await,
             guild_id,
             channels,
         )
         .await
         .wrap_err_with(|| eyre!("Retrieving voice channels failed!"),)?
-        else {
-            return Err(eyre!("No parent found!"),);
-        };
+        .ok_or_else(|| eyre!("No parent found!"),)?;
         info!("Parent: {:?}, children: {:?}", parent, children);
-        if Some(parent.id,) == left_channel_id || Some(parent.id,) == joined_channel_id {
-            let channel_id = parent.id;
+        if Some(parent.id,) == joined_channel_id {
             let parent_channel = ctx
                 .cache
                 .guild_channel(parent.id,)
@@ -299,7 +298,8 @@ impl VoiceChannelManagerEventHandler {
 
             let mut map = Map::new();
 
-            map.insert("type".into(), 2.into(),).drop();
+            map.insert("type".into(), Value::Number(Number::from(2,),),)
+                .drop();
 
             if_chain! {
                 if let Some(parent_id) = parent_channel.parent_id;
@@ -315,7 +315,7 @@ impl VoiceChannelManagerEventHandler {
             .drop();
             map.insert("name".into(), "Child".into(),).drop();
             if let Some(cap,) = parent.capacity {
-                map.insert("user_limit".into(), cap.to_string().into(),)
+                map.insert("user_limit".into(), Value::Number(Number::from(cap,),),)
                     .drop();
             }
             let mut new = ctx
@@ -358,21 +358,12 @@ impl VoiceChannelManagerEventHandler {
                 .drop();
             drop(map_lock,);
             drop(map,);
-
             voice_channels::updater::update_channel(UpdaterContext {
                 template: &parse_template(&parent.template,)
                     .wrap_err_with(|| eyre!("Parsing template received from database failed!"),)?,
-                context: &ctx,
+                context: SerenityContext(&ctx,),
                 channel_number: total_children_number,
                 total_children_number,
-                users_connected_capacity: new.user_limit.ok_or_else(|| {
-                    eyre!("No user limit provided for channel with id {channel_id}!")
-                },)?,
-                users_connected_number: new
-                    .members(&ctx.cache,)
-                    .await
-                    .wrap_err_with(|| eyre!("Could not retrieve channel members from cache!"),)?
-                    .len() as u64,
                 channel: &mut new,
             },)
             .await
@@ -384,6 +375,34 @@ impl VoiceChannelManagerEventHandler {
                 .await
                 .wrap_err_with(|| eyre!("Moving member to new channel failed!"),)?
                 .drop();
+        } else if let Some(child,) = children.get(&Child {
+            id: left_channel_id.unwrap_or(ChannelId(0,),),
+            ..Default::default()
+        },)
+        {
+            let channel = ctx
+                .cache
+                .guild_channel(child.id,)
+                .ok_or_else(|| eyre!("No channel found!"),)?;
+            let users_connected_number = channel
+                .members(&ctx.cache,)
+                .await
+                .wrap_err_with(|| eyre!("Could not retrieve channel members from cache!"),)?
+                .len() as u64;
+            if users_connected_number == 0 {
+                ctx.http
+                    .delete_channel(child.id.0,)
+                    .await
+                    .wrap_err_with(|| eyre!("Failed to delete channel!"),)?
+                    .drop();
+                let db_handle = get_db_handle(&ctx,).await;
+                voice_channels::db::update_next_child_number(&db_handle, parent.id, child.id,)
+                    .await
+                    .wrap_err_with(|| eyre!("Failed to update next_channel_number!"),)?;
+                voice_channels::db::delete_child(&db_handle, guild_id, parent.id, child.id,)
+                    .await
+                    .wrap_err_with(|| eyre!("Failed to delete child from database!"),)?;
+            }
         }
 
         for Child {
@@ -393,25 +412,17 @@ impl VoiceChannelManagerEventHandler {
             template,
         } in children
         {
+            debug!("Updating child channel with id {child_id} and number {child_number}",);
             let mut channel = ctx
                 .cache
                 .guild_channel(child_id,)
                 .ok_or_else(|| eyre!("No channel found!"),)?;
-
             voice_channels::updater::update_channel(UpdaterContext {
                 template: &parse_template(&template,)
                     .wrap_err_with(|| eyre!("Parsing template received from database failed!"),)?,
-                context: &ctx,
+                context: SerenityContext(&ctx,),
                 channel_number: child_number,
                 total_children_number,
-                users_connected_capacity: channel.user_limit.ok_or_else(|| {
-                    eyre!("No user limit provided for channel with id {child_id}!")
-                },)?,
-                users_connected_number: channel
-                    .members(&ctx.cache,)
-                    .await
-                    .wrap_err_with(|| eyre!("Could not retrieve channel members from cache!"),)?
-                    .len() as u64,
                 channel: &mut channel,
             },)
             .await
@@ -479,7 +490,7 @@ impl VoiceChannelManagerEventHandler {
 
         for (parent, children,) in &all_channels {
             debug!("Parent: {parent:#?}, Children: {children:#?}");
-            if guild.channels.contains_key(&parent.id,) {
+            if !guild.channels.contains_key(&parent.id,) {
                 info!("Parent {} doesn't exist anymore!", parent.id);
                 deleted_parent_ids.push(parent.id.0 as i64,);
                 deleted_child_ids.extend(children.iter().map(|child| child.id.0 as i64,),);

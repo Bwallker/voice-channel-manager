@@ -132,9 +132,9 @@ pub(crate) fn default_prefix() -> &'static str {
     static PREFIX: OnceLock<&'static str,> = OnceLock::new();
     PREFIX.get_or_init(|| {
         get_default_prefix()
-            .map(|ok| ok.unwrap_or("vc/".into(),),)
             .wrap_err_with(|| eyre!("Retrieving default prefix failed!"),)
             .unwrap()
+            .unwrap_or("vc/".into(),)
             .leak()
     },)
 }

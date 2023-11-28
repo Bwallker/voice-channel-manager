@@ -24,16 +24,12 @@ The bot automatically creates and deletes channels using the concept of parent a
 
 1. `{#}`: The number of the child channel. This is incremented for each child channel created, and decremented as children are deleted. It is guaranteed that two living children will never have the same number.
 2. `{%}`: The total number of sibling channels currently living (count also includes self).
-3. `{?}`: The number of users currently connected to this channel. Count may be slightly off due to updating delays.
-4. `{c}`: The total capacity of the channel. This is the maximum number of users that can be connected to the channel at once.
-
 
 ###### Example templates
 
 `Gaming channel number: {#}`
 `Gaming channel number: {#}/{%}`
 `Curly braces: {{}}`
-`{?}/{c} users connected`
 
 ### Commands
 
