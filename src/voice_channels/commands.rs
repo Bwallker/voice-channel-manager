@@ -64,7 +64,9 @@ async fn alter_template(ctx: &Context, msg: &Message, mut args: Args) -> Command
             .wrap_err_with(|| "Failed to send message!")?;
 
         Ok(())
-    }.instrument(span).await
+    }
+    .instrument(span)
+    .await
 }
 
 #[command]
@@ -83,12 +85,12 @@ async fn create_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
             .single_quoted::<String>()
             .wrap_err_with(|| eyre!("No channel name provided!"))?;
         trace!("Channel name: {}!", channel_name);
-    
+
         let template = args
             .quoted()
             .current()
             .ok_or_else(|| eyre!("No template provided!"))?;
-    
+
         trace!("Template: {}!", template);
         let parsed_template = super::parser::parse_template(template)
             .wrap_err_with(|| eyre!("Failed to parse template!"))?;
@@ -110,7 +112,7 @@ async fn create_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
             )
             .await
             .wrap_err_with(|| eyre!("Failed to create voice channel!"))?;
-    
+
         super::db::set_template(
             &get_db_handle(ctx).await,
             channel.id,
@@ -122,10 +124,9 @@ async fn create_channel(ctx: &Context, msg: &Message, mut args: Args) -> Command
         msg.channel_id
             .say(&ctx.http, format!("{}: Channel successfully created with name `{channel_name}` and template `{template}`!", msg.author.mention()))
             .await.wrap_err_with(|| "Failed to send message!")?;
-    
+
         Ok(())
     }.instrument(span).await
-    
 }
 
 #[command]
@@ -167,7 +168,9 @@ async fn change_capacity(ctx: &Context, msg: &Message, mut args: Args) -> Comman
             .wrap_err_with(|| eyre!("Failed to send message!"))?;
         info!("Changed capacity for channel with ID {channel_id} to {capacity}!");
         Ok(())
-    }.instrument(span).await
+    }
+    .instrument(span)
+    .await
 }
 
 #[group("Template channels")]

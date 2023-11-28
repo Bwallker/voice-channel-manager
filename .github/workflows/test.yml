@@ -56,5 +56,7 @@ jobs:
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
       - name: Setup Database
         run: sqlx database setup
+      - name: Format
+        run: cargo fmt --all -- --check
       - name: Test
         run: cargo test --verbose -- --nocapture

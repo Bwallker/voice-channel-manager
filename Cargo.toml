@@ -3,12 +3,46 @@ name = "voice-channel-manager"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lints.clippy]
+cargo = "warn"
+pedantic = "warn"
+perf = "warn"
+
+
+# Enable provenance lints when strict provenance is stable
+[lints.rust]
+absolute-paths-not-starting-with-crate = "forbid"
+elided-lifetimes-in-paths = "warn"
+explicit-outlives-requirements = "warn"
+# fuzzy-provenance-casts = "forbid"
+let-underscore-drop = "warn"
+# lossy-provenance-casts = "forbid"
+macro-use-extern-crate = "warn"
+missing-abi = "forbid"
+missing-debug-implementations = "warn"
+missing-docs = "warn"
+must-not-suspend = "forbid"
+non-exhaustive-omitted-patterns = "warn"
+pointer-structural-match = "forbid"
+single-use-lifetimes = "warn"
+trivial-casts = "warn"
+trivial-numeric-casts = "warn"
+unsafe-op-in-unsafe-fn = "forbid"
+unused-crate-dependencies = "warn"
+unused-extern-crates = "warn"
+unused-import-braces = "warn"
+unused-lifetimes = "warn"
+unused-macro-rules = "warn"
+unused-qualifications = "warn"
+unused-results = "warn"
+unused-tuple-struct-fields = "warn"
+variant-size-differences = "warn"
 
 [dependencies]
 color-eyre = "0.6.2"
 dotenvy = "0.15.7"
 eyre = "0.6.8"
+futures = "0.3.29"
 if_chain = "1.0.2"
 poise = "0.5.7"
 rustc-hash = "1.1.0"

@@ -1,12 +1,12 @@
-use eyre::{Result, eyre, WrapErr};
+use eyre::{eyre, Result, WrapErr};
 #[allow(unused_imports)]
-use sqlx::prelude::*;
-use sqlx::{PgPool, query};
-use tracing::info;
+use serenity::model::prelude::*;
 #[allow(unused_imports)]
 use serenity::prelude::*;
 #[allow(unused_imports)]
-use serenity::model::prelude::*;
+use sqlx::prelude::*;
+use sqlx::{query, PgPool};
+use tracing::info;
 
 pub async fn clean_left_guild_from_db(executor: &PgPool, guild_id: GuildId) -> Result<()> {
     info!("Cleaning guild with ID `{guild_id}` from database!");

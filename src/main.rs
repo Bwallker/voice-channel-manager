@@ -12,9 +12,9 @@ use dotenvy::dotenv;
 use eyre::{eyre, Result, WrapErr};
 use sqlx::PgPool;
 use tokio::runtime::Builder;
-use tracing::{Instrument, trace_span};
 #[allow(unused_imports)]
 use tracing::{debug, error, event, info, trace, warn, Level};
+use tracing::{trace_span, Instrument};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::{format::Pretty, time::UtcTime};
 use tracing_subscriber::EnvFilter;

@@ -4,7 +4,9 @@ use crate::{
     voice_channels::db::Children,
     HashMap, VoiceStates,
 };
-use eyre::{eyre, Result, WrapErr};
+use color_eyre::Section;
+use eyre::{eyre, Report, Result, WrapErr};
+use futures::future::join_all;
 use if_chain::if_chain;
 use serde_json::Map;
 use serenity::{async_trait, cache::CacheUpdate, model::prelude::*, prelude::*};
@@ -33,15 +35,25 @@ pub async fn delete_parent_and_children(
         .delete_channel(parent.parent_id.0)
         .await
         .wrap_err_with(|| eyre!("Failed to delete channel!"))?;
+    let child_results = join_all(children.iter().map(|c| c.child_id.delete(&ctx.http))).await;
+    let mut child_result = Option::<Report>::None;
 
-    for child in children {
-        let c = child
-            .child_id
-            .delete(&ctx.http)
-            .await
-            .wrap_err_with(|| eyre!("Failed to delete channel!"))?;
-        debug!("Successfully deleted channel {c:?}");
+    debug!("Child results: {child_results:#?}");
+
+    for result in child_results.into_iter().filter_map(Result::err) {
+        match child_result.take() {
+            Some(err) => {
+                child_result = Some(err.with_error(|| result));
+            }
+            None => {
+                child_result = Some(eyre!("Deleting child failed: {result}"));
+            }
+        }
     }
+    if let Some(err) = child_result {
+        return Err(err);
+    }
+
     voice_channels::db::delete_template(&get_db_handle(ctx).await, guild_id, parent.parent_id)
         .await
         .wrap_err_with(|| eyre!("Failed to delete template!"))?;
@@ -221,7 +233,8 @@ impl VoiceChannelManagerEventHandler {
 
         info!("Parsed event: {:#?}", parsed_event);
 
-        let channels_arr = [left_channel_id, joined_channel_id].map(|v| v.unwrap_or(ChannelId(0)).0 as i64);
+        let channels_arr =
+            [left_channel_id, joined_channel_id].map(|v| v.unwrap_or(ChannelId(0)).0 as i64);
 
         let channels: &[i64] = match (left_channel_id, joined_channel_id) {
             (Some(_), Some(_)) => &channels_arr,
@@ -241,7 +254,8 @@ impl VoiceChannelManagerEventHandler {
             return Err(eyre!("No parent found!"));
         };
         info!("Parent: {:?}, children: {:?}", parent, children);
-        if Some(parent.parent_id) == left_channel_id || Some(parent.parent_id) == joined_channel_id {
+        if Some(parent.parent_id) == left_channel_id || Some(parent.parent_id) == joined_channel_id
+        {
             let channel_id = parent.parent_id;
             let parent_channel = ctx
                 .cache
@@ -605,7 +619,11 @@ impl RawEventHandler for VoiceChannelManagerEventHandler {
         async move {
             trace!("Event: {event:#?}");
             let res = match event.clone() {
-                Event::Ready(ready) => self.ready(ctx, &ready.ready).await,
+                Event::Ready(ready) => {
+                    self.ready(ctx, &ready.ready)
+                        .instrument(trace_span!("Ready span"))
+                        .await
+                }
                 Event::VoiceStateUpdate(mut voice_state_event) => {
                     let new = voice_state_event.voice_state.clone();
                     let old = async {
