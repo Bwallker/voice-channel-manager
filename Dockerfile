@@ -13,7 +13,6 @@ COPY ./src ./src
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./migrations ./migrations
 COPY ./build.rs ./build.rs
-COPY ./.env ./.env
 
 FROM base as debug-mode
 
