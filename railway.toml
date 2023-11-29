@@ -1,6 +1,6 @@
 [build]
-builder = ""
-builderCommand = ""
+builder = "nixpacks"
+builderCommand = "null"
 
 [deploy]
 startCommand = "sh -c ./bin/x86_64-unknown-linux-gnu/voice-channel-manager"
