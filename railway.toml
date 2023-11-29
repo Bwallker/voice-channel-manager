@@ -1,0 +1,5 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "target/x86_64-unknown-linux-musl/release/voice-channel-manager"
