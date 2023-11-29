@@ -1,6 +1,5 @@
 [build]
 builder = "nixpacks"
-buildCommand = "null"
 
 [deploy]
 startCommand = "null"
