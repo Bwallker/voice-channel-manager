@@ -3,4 +3,4 @@ builder = "nixpacks"
 builderCommand = "null"
 
 [deploy]
-startCommand = "sh -c \"chmod -x ./bin/x86_64-unknown-linux-gnu/voice-channel-manager && ./bin/x86_64-unknown-linux-gnu/voice-channel-manager\""
+startCommand = "sh start.sh"
