@@ -195,7 +195,10 @@ fn main() -> Result<(),> {
                     .unwrap_or("voice_channel_manager=debug,info",),
             )
             .wrap_err_with(|| {
-                eyre!("Parsing tracing filter from environment variable `RUST_LOG` failed!")
+                eyre!(
+                    "Parsing tracing filter from environment variable `RUST_LOG` failed! \
+                     RUST_LOG: {rust_log:?}"
+                )
             },)?,
         )
         .finish()
