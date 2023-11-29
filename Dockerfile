@@ -30,6 +30,7 @@ FROM release-mode as release-true
 FROM ubuntu AS precompiled-true
 
 COPY ./bin ./bin
+COPY ./start.sh ./start.sh
 
 ENTRYPOINT ["./bin/x86_64-unknown-linux-gnu/voice-channel-manager"]
 
