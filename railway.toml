@@ -1,0 +1,6 @@
+[build]
+builder = ""
+builderCommand = ""
+
+[deploy]
+startCommand = "sh -c ./bin/x86_64-unknown-linux-gnu/voice-channel-manager"
