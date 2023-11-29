@@ -1,2 +1,6 @@
 [build]
 builder = "nixpacks"
+buildCommand = "cargo build --release"
+
+[deploy]
+startCommand = "cargo run --release"
