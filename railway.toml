@@ -3,4 +3,4 @@ builder = "dockerfile"
 builderCommand = "null"
 
 [deploy]
-startCommand = "sh -c chmod a+xr-w ./bin/x86_64-unknown-linux-gnu/voice-channel-manager && ./bin/x86_64-unknown-linux-gnu/voice-channel-manager"
+startCommand = "sh -c \"chmod a+xr-w ./bin/x86_64-unknown-linux-gnu/voice-channel-manager && ./bin/x86_64-unknown-linux-gnu/voice-channel-manager\""
