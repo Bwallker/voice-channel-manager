@@ -3,4 +3,4 @@ builder = "nixpacks"
 builderCommand = "null"
 
 [deploy]
-startCommand = "sh start.sh"
+startCommand = "sh ./start.sh"
