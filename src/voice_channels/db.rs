@@ -28,9 +28,7 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub(crate) async fn get_template(
-    executor: &PgPool, guild_id: GuildId,
-) -> Result<Option<String,>,> {
+pub(crate) async fn get_template(executor: &PgPool, guild_id: GuildId) -> Result<Option<String>> {
     query!(
         "SELECT channel_template FROM template_channels WHERE guild_id = $1;",
         guild_id.0 as i64
@@ -46,7 +44,7 @@ pub(crate) async fn set_template(
     channel_id: ChannelId,
     guild_id: GuildId,
     template: String,
-) -> Result<(),> {
+) -> Result<()> {
     query!(
         "INSERT INTO template_channels (channel_id, guild_id, channel_template, \
          next_child_number) VALUES ($1, $2, $3, 1) ON CONFLICT (channel_id) DO UPDATE SET \
@@ -55,31 +53,31 @@ pub(crate) async fn set_template(
         guild_id.0 as i64,
         template
     )
-    .execute(executor,)
+    .execute(executor)
     .await
-    .wrap_err_with(|| eyre!("Setting template in database for server with id {guild_id} failed!"),)
-    .map(|_| (),)
+    .wrap_err_with(|| eyre!("Setting template in database for server with id {guild_id} failed!"))
+    .map(|_| ())
 }
 
 pub(crate) async fn delete_template(
     executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
-) -> Result<(),> {
+) -> Result<()> {
     let mut transaction = executor
         .begin()
         .await
-        .wrap_err_with(|| eyre!("Failed to start a transaction!"),)?;
+        .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
     let res1 = query!(
         "DELETE FROM template_channels WHERE guild_id = $1 AND channel_id = $2;",
         guild_id.0 as i64,
         channel_id.0 as i64
     )
-    .execute(&mut *transaction,)
+    .execute(&mut *transaction)
     .await
     .wrap_err_with(|| {
         eyre!("Deleting template from database for server with id {guild_id} failed!")
-    },)?;
+    })?;
 
     debug!("Finished deleting parent with id {channel_id} from database!");
     assert_eq!(res1.rows_affected(), 1);
@@ -88,17 +86,17 @@ pub(crate) async fn delete_template(
         guild_id.0 as i64,
         channel_id.0 as i64,
     )
-    .execute(executor,)
+    .execute(executor)
     .await
     .wrap_err_with(|| {
         eyre!("Deleting child channels from database for server with id {guild_id} failed!")
-    },)?;
+    })?;
     debug!(
         "Finished deleting {} children of parent with id {channel_id} from database!",
         res2.rows_affected()
     );
 
-    Ok((),)
+    Ok(())
 }
 
 pub(crate) async fn register_child(
@@ -106,11 +104,11 @@ pub(crate) async fn register_child(
     guild_id: GuildId,
     parent_id: ChannelId,
     child_id: ChannelId,
-) -> Result<u64,> {
+) -> Result<u64> {
     let mut transaction = executor
         .begin()
         .await
-        .wrap_err_with(|| eyre!("Failed to start a transaction!"),)?;
+        .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
 
     info!("Parent ID {parent_id}, Guild ID: {guild_id}, Child ID: {child_id}");
 
@@ -120,11 +118,11 @@ pub(crate) async fn register_child(
         parent_id.0 as i64,
         guild_id.0 as i64
     )
-    .fetch_one(&mut *transaction,)
+    .fetch_one(&mut *transaction)
     .await
     .wrap_err_with(|| {
         eyre!("Updating next child number in database for server with id {guild_id} failed!")
-    },)?;
+    })?;
 
     info!(
         "Successfully updated next_child_number!: Result: {:?}",
@@ -138,23 +136,23 @@ pub(crate) async fn register_child(
         child_id.0 as i64,
         row.child_number
     )
-    .execute(&mut *transaction,)
+    .execute(&mut *transaction)
     .await
     .wrap_err_with(|| {
         eyre!("Registering child channel in database for server with id {guild_id} failed!")
-    },)
-    .map(|_| (),)?;
+    })
+    .map(|_| ())?;
 
     let child_number = row
         .child_number
-        .ok_or_else(|| eyre!("Child number not present!"),)?;
+        .ok_or_else(|| eyre!("Child number not present!"))?;
 
     transaction
         .commit()
         .await
-        .wrap_err_with(|| eyre!("Failed to commit transaction!"),)?;
+        .wrap_err_with(|| eyre!("Failed to commit transaction!"))?;
 
-    Ok(child_number as u64,)
+    Ok(child_number as u64)
 }
 
 #[allow(dead_code)]
@@ -163,19 +161,19 @@ pub(crate) async fn delete_child(
     guild_id: GuildId,
     parent_id: ChannelId,
     child_id: ChannelId,
-) -> Result<(),> {
+) -> Result<()> {
     query!(
         "DELETE FROM child_channels WHERE guild_id = $1 AND parent_id = $2 AND child_id = $3;",
         guild_id.0 as i64,
         parent_id.0 as i64,
         child_id.0 as i64
     )
-    .execute(executor,)
+    .execute(executor)
     .await
     .wrap_err_with(|| {
         eyre!("Deleting child channel from database for server with id {guild_id} failed!")
-    },)
-    .map(|_| (),)
+    })
+    .map(|_| ())
 }
 
 pub(crate) async fn change_capacity(
@@ -183,36 +181,36 @@ pub(crate) async fn change_capacity(
     guild_id: GuildId,
     channel_id: ChannelId,
     capacity: u64,
-) -> Result<(),> {
+) -> Result<()> {
     query!(
         "UPDATE template_channels SET capacity = $3 WHERE guild_id = $1 AND channel_id = $2;",
         guild_id.0 as i64,
         channel_id.0 as i64,
         capacity as i64
     )
-    .execute(executor,)
+    .execute(executor)
     .await
-    .wrap_err_with(|| eyre!("Updating capacity in database for server with id {guild_id} failed!"),)
-    .map(|_| (),)
+    .wrap_err_with(|| eyre!("Updating capacity in database for server with id {guild_id} failed!"))
+    .map(|_| ())
 }
 
 pub(crate) async fn clear_capacity(
     executor: &PgPool,
     guild_id: GuildId,
     channel_id: ChannelId,
-) -> Result<(),> {
+) -> Result<()> {
     query!(
         "UPDATE template_channels SET capacity = NULL WHERE guild_id = $1 AND channel_id = $2;",
         guild_id.0 as i64,
         channel_id.0 as i64
     )
-    .execute(executor,)
+    .execute(executor)
     .await
-    .wrap_err_with(|| eyre!("Clearing capacity in database for server with id {guild_id} failed!"),)
-    .map(|_| (),)
+    .wrap_err_with(|| eyre!("Clearing capacity in database for server with id {guild_id} failed!"))
+    .map(|_| ())
 }
 
-#[derive(Debug, Clone, Default,)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Child {
     pub(crate) id:                    ChannelId,
     pub(crate) number:                u64,
@@ -221,30 +219,30 @@ pub(crate) struct Child {
 }
 
 impl Hash for Child {
-    fn hash<H: Hasher,>(&self, hasher: &mut H,) {
-        self.id.hash(hasher,);
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.id.hash(hasher);
     }
 }
 
 impl PartialEq for Child {
-    fn eq(&self, other: &Self,) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
 impl Eq for Child {}
 
-pub(crate) type Children = HashSet<Child,>;
+pub(crate) type Children = HashSet<Child>;
 
-#[derive(Debug, Clone, Default,)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Parent {
     pub(crate) id:       ChannelId,
     pub(crate) template: String,
-    pub(crate) capacity: Option<u64,>,
+    pub(crate) capacity: Option<u64>,
 }
 
-impl From<ChannelId,> for Parent {
-    fn from(parent_id: ChannelId,) -> Self {
+impl From<ChannelId> for Parent {
+    fn from(parent_id: ChannelId) -> Self {
         Self {
             id:       parent_id,
             template: String::new(),
@@ -254,13 +252,13 @@ impl From<ChannelId,> for Parent {
 }
 
 impl Hash for Parent {
-    fn hash<H: Hasher,>(&self, hasher: &mut H,) {
-        self.id.hash(hasher,);
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.id.hash(hasher);
     }
 }
 
 impl PartialEq for Parent {
-    fn eq(&self, other: &Self,) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
@@ -271,7 +269,7 @@ pub(crate) async fn get_all_children_of_parent(
     executor: &PgPool,
     guild_id: GuildId,
     channels: &[i64],
-) -> Result<Option<(Parent, Children,),>,> {
+) -> Result<Option<(Parent, Children)>> {
     debug!("Guild id and channel id in get all children is: {guild_id}, {channels:?}");
     let res = query!(
         r#"
@@ -302,15 +300,15 @@ pub(crate) async fn get_all_children_of_parent(
 
     let mut iter = res.into_iter().peekable();
 
-    let Some(parent_row,) = iter.peek() else {
-        return Ok(None,);
+    let Some(parent_row) = iter.peek() else {
+        return Ok(None);
     };
 
-    let parent_id = ChannelId(parent_row.channel_id as u64,);
+    let parent_id = ChannelId(parent_row.channel_id as u64);
 
     let template = parent_row.channel_template.clone();
 
-    let capacity = parent_row.capacity.map(|v| v as u64,);
+    let capacity = parent_row.capacity.map(|v| v as u64);
 
     let parent = Parent {
         id: parent_id,
@@ -320,7 +318,7 @@ pub(crate) async fn get_all_children_of_parent(
 
     let children = iter
         .filter_map(|row| {
-            let child_id = ChannelId(row.child_id? as u64,);
+            let child_id = ChannelId(row.child_id? as u64);
 
             let child_number = row.child_number? as u64;
 
@@ -331,21 +329,21 @@ pub(crate) async fn get_all_children_of_parent(
                 number: child_number,
                 total_children_number,
                 template,
-            },)
-        },)
+            })
+        })
         .collect();
 
-    Ok(Some((parent, children,),),)
+    Ok(Some((parent, children)))
 }
 pub(crate) async fn get_all_channels_in_guild(
     executor: &PgPool,
     guild_id: GuildId,
-) -> Result<HashMap<Parent, Children,>,> {
+) -> Result<HashMap<Parent, Children>> {
     info!("Retrieving all channels in guild with ID `{guild_id}`!");
     let mut transaction = executor
         .begin()
         .await
-        .wrap_err_with(|| eyre!("Failed to start a transaction!"),)?;
+        .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
 
     let res = query!(
         r#"
@@ -363,12 +361,12 @@ pub(crate) async fn get_all_channels_in_guild(
     let mut parent_channels = HashMap::default();
 
     for row in res {
-        let parent_id = ChannelId(row.channel_id as u64,);
-        let child_id = row.child_id.map(|v| ChannelId(v as u64,),);
-        let child_number = row.child_number.map(|v| v as u64,);
+        let parent_id = ChannelId(row.channel_id as u64);
+        let child_id = row.child_id.map(|v| ChannelId(v as u64));
+        let child_number = row.child_number.map(|v| v as u64);
         let next_child_number = row.next_child_number as u64;
         let template = row.channel_template;
-        let capacity = row.capacity.map(|v| v as u64,);
+        let capacity = row.capacity.map(|v| v as u64);
 
         let parent = Parent {
             id: parent_id,
@@ -377,8 +375,8 @@ pub(crate) async fn get_all_channels_in_guild(
         };
 
         let children = parent_channels
-            .entry(parent,)
-            .or_insert_with(HashSet::default,);
+            .entry(parent)
+            .or_insert_with(HashSet::default);
 
         if_chain! {
             if let Some(child_id) = child_id;
@@ -395,14 +393,14 @@ pub(crate) async fn get_all_channels_in_guild(
         }
     }
 
-    Ok(parent_channels,)
+    Ok(parent_channels)
 }
 
 pub(crate) async fn update_next_child_number(
     executor: &PgPool,
     parent_id: ChannelId,
     child_id: ChannelId,
-) -> Result<(),> {
+) -> Result<()> {
     let res = query!(
         "
         WITH
@@ -430,9 +428,9 @@ pub(crate) async fn update_next_child_number(
         parent_id.0 as i64,
         child_id.0 as i64
     )
-    .execute(executor,)
+    .execute(executor)
     .await
-    .wrap_err_with(|| eyre!("Failed to update next_child_number for parent with id {parent_id}"),)?;
+    .wrap_err_with(|| eyre!("Failed to update next_child_number for parent with id {parent_id}"))?;
 
     let rows_affected = res.rows_affected();
 
@@ -441,10 +439,10 @@ pub(crate) async fn update_next_child_number(
         "Sanity check failed: update_next_child_number updated {rows_affected} rows!"
     );
 
-    Ok((),)
+    Ok(())
 }
 
-pub(crate) async fn init_next_child_number(executor: &PgPool,) -> Result<(),> {
+pub(crate) async fn init_next_child_number(executor: &PgPool) -> Result<()> {
     let rows_affected = query!(
         "
         WITH next AS (
@@ -457,31 +455,31 @@ pub(crate) async fn init_next_child_number(executor: &PgPool,) -> Result<(),> {
          parent_id = channel_id)
     "
     )
-    .execute(executor,)
+    .execute(executor)
     .await
-    .wrap_err_with(|| eyre!("Failed to initialize next_child_number!"),)?
+    .wrap_err_with(|| eyre!("Failed to initialize next_child_number!"))?
     .rows_affected();
 
     info!("Updated {rows_affected} rows in init_next_child_number!");
-    Ok((),)
+    Ok(())
 }
 
 pub(crate) async fn remove_dead_channels(
     executor: &PgPool,
     deleted_parents: &[i64],
     deleted_children: &[i64],
-) -> Result<(),> {
+) -> Result<()> {
     let mut transaction = executor
         .begin()
         .await
-        .wrap_err_with(|| eyre!("Failed to start a transaction!"),)?;
+        .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
     let rows_affected = query!(
         "DELETE FROM child_channels WHERE child_id = ANY($1);",
         deleted_children
     )
-    .execute(&mut *transaction,)
+    .execute(&mut *transaction)
     .await
-    .wrap_err_with(|| eyre!("Failed to remove deleted children!"),)?
+    .wrap_err_with(|| eyre!("Failed to remove deleted children!"))?
     .rows_affected();
 
     debug!("Deleted {rows_affected} rows in remove_deleted_children!");
@@ -490,12 +488,12 @@ pub(crate) async fn remove_dead_channels(
         "DELETE FROM template_channels WHERE channel_id = ANY($1);",
         deleted_parents
     )
-    .execute(&mut *transaction,)
+    .execute(&mut *transaction)
     .await
-    .wrap_err_with(|| eyre!("Failed to remove deleted parents!"),)?
+    .wrap_err_with(|| eyre!("Failed to remove deleted parents!"))?
     .rows_affected();
 
     debug!("Deleted {rows_affected} rows in remove_deleted_parents!");
 
-    Ok((),)
+    Ok(())
 }

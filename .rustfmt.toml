@@ -1,4 +1,5 @@
 color = "Always"
+edition = "2021"
 format_macro_matchers = true
 format_strings = true
 group_imports = "StdExternalCrate"
@@ -14,7 +15,7 @@ reorder_impl_items = true
 reorder_modules = true
 struct_field_align_threshold = 20
 tab_spaces = 4
-trailing_comma = "Always"
+trailing_comma = "Vertical"
 trailing_semicolon = true
 unstable_features = true
 use_field_init_shorthand = true

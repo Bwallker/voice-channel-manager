@@ -4,37 +4,37 @@ use eyre::{
     WrapErr,
 };
 
-struct Parser<'a,> {
+struct Parser<'a> {
     input:       &'a str,
     current_idx: usize,
     current_col: usize,
     current_row: usize,
-    parts:       Vec<TemplatePart,>,
+    parts:       Vec<TemplatePart>,
 }
 
-impl<'a,> Parser<'a,> {
-    fn starts_with(&self, s: &str,) -> bool {
+impl<'a> Parser<'a> {
+    fn starts_with(&self, s: &str) -> bool {
         self.input
-            .get(self.current_idx..,)
-            .map_or(false, |ss| ss.starts_with(s,),)
+            .get(self.current_idx..)
+            .map_or(false, |ss| ss.starts_with(s))
     }
 
-    fn current_byte(&self,) -> Option<u8,> {
-        self.input.as_bytes().get(self.current_idx,).copied()
+    fn current_byte(&self) -> Option<u8> {
+        self.input.as_bytes().get(self.current_idx).copied()
     }
 
-    fn current_char(&self,) -> Option<char,> {
+    fn current_char(&self) -> Option<char> {
         self.input
-            .get(self.current_idx..,)
-            .and_then(|s| s.chars().next(),)
+            .get(self.current_idx..)
+            .and_then(|s| s.chars().next())
     }
 
-    fn advance(&mut self,) {
-        let Some(c,) = self.current_char() else {
+    fn advance(&mut self) {
+        let Some(c) = self.current_char() else {
             return;
         };
 
-        if let Some(b'\n',) = self.current_byte() {
+        if let Some(b'\n') = self.current_byte() {
             self.current_col = 1;
             self.current_row += c.len_utf8();
         } else {
@@ -43,7 +43,7 @@ impl<'a,> Parser<'a,> {
         self.current_idx += c.len_utf8();
     }
 
-    fn new(input: &'a str,) -> Self {
+    fn new(input: &'a str) -> Self {
         Self {
             input,
             current_idx: 0,
@@ -53,17 +53,17 @@ impl<'a,> Parser<'a,> {
         }
     }
 
-    fn parse(mut self,) -> Result<Template,> {
+    fn parse(mut self) -> Result<Template> {
         while self.current_idx < self.input.len() {
-            if self.current_byte() == Some(b'{',) {
+            if self.current_byte() == Some(b'{') {
                 let res = self.parse_braces().wrap_err_with(|| {
                     eyre!(
                         "Failed to parse braces at {}:{}",
                         self.current_col,
                         self.current_row
                     )
-                },)?;
-                self.parts.push(res,);
+                })?;
+                self.parts.push(res);
             } else {
                 let res = self.parse_string().wrap_err_with(|| {
                     eyre!(
@@ -71,35 +71,35 @@ impl<'a,> Parser<'a,> {
                         self.current_col,
                         self.current_row
                     )
-                },)?;
-                self.parts.push(res,);
+                })?;
+                self.parts.push(res);
             }
         }
-        Ok(Template { parts: self.parts, },)
+        Ok(Template { parts: self.parts })
     }
 
-    fn parse_string(&mut self,) -> Result<TemplatePart,> {
+    fn parse_string(&mut self) -> Result<TemplatePart> {
         let start_idx = self.current_idx;
         let mut contents = String::new();
         loop {
-            while self.starts_with("{{",) {
+            while self.starts_with("{{") {
                 self.advance();
                 self.advance();
-                contents.push('{',);
+                contents.push('{');
                 continue;
             }
-            while self.starts_with("}}",) {
+            while self.starts_with("}}") {
                 self.advance();
                 self.advance();
-                contents.push('}',);
+                contents.push('}');
                 continue;
             }
-            let Some(c,) = self.current_char() else { break };
+            let Some(c) = self.current_char() else { break };
             if c == '{' {
                 break;
             }
             // println!("{} - {}:{}", self.current_idx, self.current_col, self.current_row);
-            contents.push(c,);
+            contents.push(c);
             self.advance();
         }
 
@@ -110,12 +110,12 @@ impl<'a,> Parser<'a,> {
                 self.current_col,
                 self.current_row,
                 self.current_char().unwrap_or('\0')
-            ),);
+            ));
         }
-        Ok(TemplatePart::String(contents,),)
+        Ok(TemplatePart::String(contents))
     }
 
-    fn parse_braces(&mut self,) -> Result<TemplatePart,> {
+    fn parse_braces(&mut self) -> Result<TemplatePart> {
         assert_eq!(self.current_byte(), Some(b'{'));
         self.advance();
         let content = self.parse_template_content().wrap_err_with(|| {
@@ -124,21 +124,21 @@ impl<'a,> Parser<'a,> {
                 self.current_col,
                 self.current_row
             )
-        },)?;
+        })?;
 
-        if self.current_byte() != Some(b'}',) {
+        if self.current_byte() != Some(b'}') {
             return Err(eyre!(
                 "Expected '}}' at {}:{}, but found '{}'",
                 self.current_col,
                 self.current_row,
                 self.current_char().unwrap_or('\0')
-            ),);
+            ));
         }
         self.advance();
-        Ok(content,)
+        Ok(content)
     }
 
-    fn parse_template_content(&mut self,) -> Result<TemplatePart,> {
+    fn parse_template_content(&mut self) -> Result<TemplatePart> {
         let ret = Ok(
             match self.current_byte().ok_or_else(|| {
                 eyre!(
@@ -147,8 +147,7 @@ impl<'a,> Parser<'a,> {
                     self.current_col,
                     self.current_row
                 )
-            },)?
-            {
+            })? {
                 | b'#' => TemplatePart::ChannelNumber,
                 | b'%' => TemplatePart::ChildrenInTotal,
                 | _ =>
@@ -158,7 +157,7 @@ impl<'a,> Parser<'a,> {
                         self.current_col,
                         self.current_row,
                         self.current_char().unwrap_or('\0')
-                    ),),
+                    )),
             },
         );
         self.advance();
@@ -167,21 +166,21 @@ impl<'a,> Parser<'a,> {
 }
 
 #[non_exhaustive]
-#[derive(PartialEq, Eq, Debug,)]
+#[derive(PartialEq, Eq, Debug)]
 pub(crate) enum TemplatePart {
     ChannelNumber,
     ChildrenInTotal,
-    String(String,),
+    String(String),
 }
 
 #[non_exhaustive]
-#[derive(PartialEq, Eq, Debug,)]
+#[derive(PartialEq, Eq, Debug)]
 pub(crate) struct Template {
-    pub(crate) parts: Vec<TemplatePart,>,
+    pub(crate) parts: Vec<TemplatePart>,
 }
 
-pub(crate) fn parse_template(template: &str,) -> Result<Template,> {
-    Parser::new(template,).parse()
+pub(crate) fn parse_template(template: &str) -> Result<Template> {
+    Parser::new(template).parse()
 }
 
 #[cfg(test)]
@@ -203,7 +202,7 @@ mod tests {
     #[case("Röstkanal {{{#}}}#", Template {
         parts: vec![TemplatePart::String("Röstkanal {".into()), TemplatePart::ChannelNumber, TemplatePart::String("}#".into())]
     })]
-    fn test_parses(#[case] input: &str, #[case] expected: Template,) {
+    fn test_parses(#[case] input: &str, #[case] expected: Template) {
         assert_eq!(expected, parse_template(input).unwrap(),);
     }
 }

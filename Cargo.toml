@@ -18,11 +18,11 @@ nightly-features = []
 beta-features = []
 
 [lints.clippy]
-cargo = "warn"
-pedantic = "warn"
+cargo = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
 cast-possible-wrap = "allow"
 cast-sign-loss = "allow"
-perf = "warn"
+perf = { level = "warn", priority = -1 }
 
 
 # Enable provenance lints when strict provenance is stable
@@ -40,7 +40,6 @@ missing-debug-implementations = "warn"
 missing-docs = "warn"
 # must-not-suspend = "forbid"
 # non-exhaustive-omitted-patterns = "warn"
-pointer-structural-match = "forbid"
 single-use-lifetimes = "warn"
 trivial-casts = "warn"
 trivial-numeric-casts = "warn"
@@ -52,29 +51,37 @@ unused-lifetimes = "warn"
 unused-macro-rules = "warn"
 unused-qualifications = "warn"
 unused-results = "warn"
-unused-tuple-struct-fields = "warn"
 variant-size-differences = "warn"
 
 [dependencies]
-color-eyre = "0.6.2"
+color-eyre = "0.6.3"
 dotenvy = "0.15.7"
-eyre = "0.6.8"
-futures = "0.3.29"
+eyre = "0.6.12"
+futures = "0.3.31"
 if_chain = "1.0.2"
-rustc-hash = "1.1.0"
-serde_json = "1.0.107"
-serenity = { version = "0.11.6", features = [] }
+poise = "0.6.1"
+rustc-hash = "2.0.0"
+serde_json = "1.0.128"
+serenity = { version = "0.12.2", features = [
+    "builder",
+    "cache",
+    "client",
+    "gateway",
+    "http",
+    "model",
+    "utils",
+], default-features = false }
 
-sqlx = { version = "0.7.2", features = [
+sqlx = { version = "0.8.2", features = [
     "sqlx-postgres",
     "postgres",
     "runtime-tokio",
 ] }
-tokio = { version = "1.33.0", features = ["rt", "rt-multi-thread", "macros"] }
-tracing = "0.1.39"
+tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "macros"] }
+tracing = "0.1.40"
 tracing-error = "0.2.0"
-tracing-subscriber = { version = "0.3.17", features = ["time", "env-filter"] }
+tracing-subscriber = { version = "0.3.18", features = ["time", "env-filter"] }
 
 [dev-dependencies]
-pretty_assertions = "1.4.0"
-rstest = "0.18.2"
+pretty_assertions = "1.4.1"
+rstest = "0.23.0"

@@ -3,18 +3,15 @@ use std::fmt::Write;
 use color_eyre::Section;
 use eyre::{
     eyre,
+    Result,
     WrapErr,
+};
+use poise::{
+    command,
+    Context,
 };
 use serde_json::Number;
 use serenity::{
-    framework::standard::{
-        macros::{
-            command,
-            group,
-        },
-        Args,
-        CommandResult,
-    },
     json::JsonMap,
     model::prelude::*,
     prelude::*,
@@ -34,119 +31,100 @@ use crate::{
     DropExt,
 };
 
-#[command]
-#[description("Alters the template for a template channel.")]
-#[usage("<prefix>/alter_template <channel id> <new template>")]
-#[example("vc/alter_template 123456789 \"Gaming channel number {#}#\"")]
+type CommandResult = Result<()>;
+
+/// Alters the template for a template channel.
+#[command(slash_command)]
+#[category("voice-channels")]
 #[aliases("alter_channel", "alter_parent")]
-#[only_in(guild)]
-#[num_args(2)]
+#[guild_only]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn alter_template(ctx: &Context, msg: &Message, mut args: Args,) -> CommandResult {
+async fn alter_template(
+    ctx: &Context,
+    #[description = "The ID of the channel to alter"] channel_id: ChannelId,
+    #[description = "The template to use"] new_template: String,
+) -> CommandResult {
     let span = trace_span!("alter_template span");
     async move {
-        args.trimmed().quoted().drop();
-        let channel_id = args
-            .parse::<ChannelId>()
-            .wrap_err_with(|| eyre!("Failed to parse channel id!"),)
-            .suggestion("Channel ID must be a valid integer.",)?;
-        args.advance().drop();
-        let new_template = args
-            .quoted()
-            .current()
-            .ok_or_else(|| eyre!("No template provided!"),)?;
-
         info!("New template: {new_template}!");
-        let parsed_template = super::parser::parse_template(new_template,)
-            .wrap_err_with(|| eyre!("Failed to parse template!"),)?;
+        let guild_id = ctx.guild().unwrap().id;
+        let parsed_template = super::parser::parse_template(&new_template)
+            .wrap_err_with(|| eyre!("Failed to parse template!"))?;
         info!("Parsed template: {:#?}!", parsed_template);
         super::db::set_template(
-            &get_db_handle(ctx,).await,
+            &get_db_handle(ctx).await,
             channel_id,
-            msg.guild_id
-                .ok_or_else(|| eyre!("No guild id provided!"),)?,
-            new_template.to_string(),
+            guild_id,
+            new_template,
         )
         .await
-        .wrap_err_with(|| eyre!("Failed to set template!"),)?;
-        msg.channel_id
+        .wrap_err_with(|| eyre!("Failed to set template!"))?;
+        ctx.channel_id()
             .say(
-                &ctx.http,
+                &ctx.http(),
                 format!(
                     "{}: Template successfully changed to `{new_template}`!",
                     msg.author.mention()
                 ),
             )
             .await
-            .wrap_err_with(|| "Failed to send message!",)?
+            .wrap_err_with(|| "Failed to send message!")?
             .drop();
 
-        Ok((),)
+        Ok(())
     }
-    .instrument(span,)
+    .instrument(span)
     .await
 }
-
-#[command]
-#[description("Creates a new template channel with a name and a template.")]
-#[usage("<prefix>/create_channel <channel name> <template>")]
-#[example("vc/create_channel \"Create a gaming channel!\" \"Gaming channel number {#}#\"")]
-#[only_in(guild)]
-#[num_args(2)]
+/// Creates a new template channel with a name and a template.
+#[command(slash_command)]
+#[category("voice-channels")]
+#[guild_only]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn create_channel(ctx: &Context, msg: &Message, mut args: Args,) -> CommandResult {
+async fn create_channel(
+    ctx: &Context,
+    #[description = "The name of the channel to create"] channel_name: String,
+    #[description = "The template to use"] template: String,
+) -> CommandResult {
     let span = trace_span!("create_channel span");
     async move {
-        args.trimmed().quoted().drop();
         trace!("Entered create_channel!");
-        let channel_name = args
-            .single_quoted::<String>()
-            .wrap_err_with(|| eyre!("No channel name provided!"),)?;
-        trace!("Channel name: {}!", channel_name);
-
-        let template = args
-            .quoted()
-            .current()
-            .ok_or_else(|| eyre!("No template provided!"),)?;
-
+        let guild_id = ctx.guild().unwrap().id;
         trace!("Template: {}!", template);
-        let parsed_template = super::parser::parse_template(template,)
-            .wrap_err_with(|| eyre!("Failed to parse template!"),)?;
+        let parsed_template = super::parser::parse_template(&template)
+            .wrap_err_with(|| eyre!("Failed to parse template!"))?;
         trace!("Parsed template: {:#?}!", parsed_template);
         let mut options = JsonMap::new();
         options
             .insert(
                 "name".to_string(),
-                JsonValue::String(channel_name.to_string(),),
+                JsonValue::String(channel_name.to_string()),
             )
             .drop();
         options
-            .insert("type".to_string(), JsonValue::Number(Number::from(2,),),)
+            .insert("type".to_string(), JsonValue::Number(Number::from(2)))
             .drop();
         let channel = ctx
             .http
             .create_channel(
-                msg.guild_id
-                    .ok_or_else(|| eyre!("No guild id provided!"),)?
-                    .0,
+                guild_id.get(),
                 &options,
-                Some("Creating a new voice channel",),
+                Some("Creating a new voice channel"),
             )
             .await
-            .wrap_err_with(|| eyre!("Failed to create voice channel!"),)?;
+            .wrap_err_with(|| eyre!("Failed to create voice channel!"))?;
 
         super::db::set_template(
-            &get_db_handle(ctx,).await,
+            &get_db_handle(ctx).await,
             channel.id,
-            msg.guild_id
-                .ok_or_else(|| eyre!("No guild id provided!"),)?,
+            guild_id,
             template.to_string(),
         )
         .await
-        .wrap_err_with(|| eyre!("Failed to create template!"),)?;
-        msg.channel_id
+        .wrap_err_with(|| eyre!("Failed to create template!"))?;
+        ctx.channel_id()
             .say(
-                &ctx.http,
+                &ctx.http(),
                 format!(
                     "{}: Channel successfully created with name `{channel_name}` and template \
                      `{template}`!",
@@ -154,105 +132,89 @@ async fn create_channel(ctx: &Context, msg: &Message, mut args: Args,) -> Comman
                 ),
             )
             .await
-            .wrap_err_with(|| "Failed to send message!",)?
+            .wrap_err_with(|| "Failed to send message!")?
             .drop();
 
-        Ok((),)
+        Ok(())
     }
-    .instrument(span,)
+    .instrument(span)
     .await
 }
-
-#[command]
-#[description("Changes the capacity for generated channels of a template channel.")]
-#[usage("<prefix>/change_capacity <channel id> <capacity>")]
-#[example("vc/change_capacity 1234567890 42")]
+/// Changes the capacity for generated channels of a template channel.
+#[command(slash_command)]
 #[aliases("change_cap", "set_cap", "set_capacity")]
-#[only_in(guild)]
-#[num_args(2)]
+#[category("voice-channels")]
+#[guild_only]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn change_capacity(ctx: &Context, msg: &Message, mut args: Args,) -> CommandResult {
+async fn change_capacity(
+    ctx: &Context,
+    #[description = "The ID of the channel whose capacity you want to change."]
+    channel_id: ChannelId,
+    #[description = "The new capacity to use."] capacity: u64,
+) -> CommandResult {
     let span = trace_span!("change_capacity span");
     async move {
-        args.trimmed().quoted().drop();
-        let channel_id = args.single_quoted::<ChannelId>().wrap_err_with(|| {
-            eyre!("Failed to parse channel id!").suggestion("Channel ID must be a valid integer.",)
-        },)?;
-        let capacity = args
-            .single_quoted::<u64>()
-            .wrap_err_with(|| eyre!("Failed to parse channel capacity!"),)
-            .suggestion("Channel capacity must be a valid integer.",)?;
-        let guild_id = msg
-            .guild_id
-            .ok_or_else(|| eyre!("Guild ID was missing!. This should be impossible!"),)?;
+        let guild_id = ctx.guild().unwrap().id;
 
-        super::db::change_capacity(&get_db_handle(ctx,).await, guild_id, channel_id, capacity,)
+        super::db::change_capacity(&get_db_handle(ctx).await, guild_id, channel_id, capacity)
             .await
-            .wrap_err_with(|| eyre!("Failed at changing capacity!"),)?;
+            .wrap_err_with(|| eyre!("Failed at changing capacity!"))?;
 
-        msg.channel_id
+        ctx.channel_id
             .say(
-                &ctx.http,
+                &ctx.http(),
                 format!(
                     "{} - Successfully changed capacity to {capacity}!",
                     msg.author.mention()
                 ),
             )
             .await
-            .wrap_err_with(|| eyre!("Failed to send message!"),)?
+            .wrap_err_with(|| eyre!("Failed to send message!"))?
             .drop();
         info!("Changed capacity for channel with ID {channel_id} to {capacity}!");
-        Ok((),)
+        Ok(())
     }
-    .instrument(span,)
+    .instrument(span)
     .await
 }
-
-#[command]
-#[description("Clears the set capacity for generated channels of a template channel.")]
-#[usage("<prefix>/clear_capacity <channel id>")]
-#[example("vc/clear_capacity 1234567890")]
+/// Clears the set capacity for generated channels of a template channel.
+#[command(slash_command)]
 #[aliases("clear_cap")]
-#[only_in(guild)]
-#[num_args(1)]
+#[category("voice-channels")]
+#[guild_only]
 #[required_permissions("MANAGE_CHANNELS")]
-async fn clear_capacity(ctx: &Context, msg: &Message, mut args: Args,) -> CommandResult {
+async fn clear_capacity(
+    ctx: &Context,
+    #[description = "The ID of the channel whose capacity you want to delete."]
+    channel_id: ChannelId,
+) -> CommandResult {
     let span = trace_span!("clear_capacity span");
     async move {
-        args.trimmed().quoted().drop();
-        let channel_id = args.single_quoted::<ChannelId>().wrap_err_with(|| {
-            eyre!("Failed to parse channel id!").suggestion("Channel ID must be a valid integer.",)
-        },)?;
-        let guild_id = msg
-            .guild_id
-            .ok_or_else(|| eyre!("Guild ID was missing!. This should be impossible!"),)?;
+        let guild_id = ctx.guild().unwrap().id;
 
-        super::db::clear_capacity(&get_db_handle(ctx,).await, guild_id, channel_id,)
+        super::db::clear_capacity(&get_db_handle(ctx).await, guild_id, channel_id)
             .await
-            .wrap_err_with(|| eyre!("Failed at clearing capacity!"),)?;
+            .wrap_err_with(|| eyre!("Failed at clearing capacity!"))?;
 
-        msg.channel_id
+        ctx.channel_id()
             .say(
-                &ctx.http,
+                &ctx.http(),
                 format!(
                     "{} - Successfully cleared capacity for channel with ID {channel_id}!",
                     msg.author.mention()
                 ),
             )
             .await
-            .wrap_err_with(|| eyre!("Failed to send message!"),)?
+            .wrap_err_with(|| eyre!("Failed to send message!"))?
             .drop();
         info!("Cleared capacity for channel with ID {channel_id}!");
-        Ok((),)
+        Ok(())
     }
-    .instrument(span,)
+    .instrument(span)
     .await
 }
-
-#[command]
-#[description("Lists all template channels and their children in your guild.")]
-#[usage("<prefix>/list_template_channels")]
-#[example("vc/list_template_channels")]
+/// Lists all template channels and their children in your guild.
+#[command(slash_command)]
 #[aliases(
     "list_template",
     "list_templates",
@@ -261,43 +223,42 @@ async fn clear_capacity(ctx: &Context, msg: &Message, mut args: Args,) -> Comman
     "list_channel",
     "list_channels"
 )]
-#[only_in(guild)]
-#[num_args(0)]
-async fn list_template_channels(ctx: &Context, msg: &Message, _args: Args,) -> CommandResult {
+#[category("voice-channels")]
+#[guild_only]
+#[required_permissions("MANAGE_CHANNELS")]
+async fn list_template_channels(ctx: &Context) -> CommandResult {
     let span = trace_span!("list_template_channels span");
     async move {
-        let guild_id = msg
-            .guild_id
-            .ok_or_else(|| eyre!("Guild ID was missing!. This should be impossible!"),)?;
+        let guild_id = ctx.guild().unwrap().id;
         let all_channels =
-            super::db::get_all_channels_in_guild(&get_db_handle(ctx,).await, guild_id,)
+            super::db::get_all_channels_in_guild(&get_db_handle(ctx).await, guild_id)
                 .await
                 .wrap_err_with(|| {
                     eyre!("Failed to get all channels in guild in list_template_channels!")
-                },)?;
-        let mut message = format!("{}:\n`", msg.author.mention(),);
-        for (parent_number, (parent, children,),) in (1..=all_channels.len()).zip(&all_channels,) {
-            let channel = ctx.cache.channel(parent.id,).and_then(Channel::guild,);
-            let parent_name = channel.as_ref().map_or("[Name not found]", |c| c.name(),);
+                })?;
+        let mut message = format!("{}:\n`", ctx.author().mention(),);
+        for (parent_number, (parent, children)) in (1..=all_channels.len()).zip(&all_channels) {
+            let channel = ctx.cache().channel(parent.id).and_then(Channel::guild);
+            let parent_name = channel.as_ref().map_or("[Name not found]", |c| c.name());
             writeln!(message, "\tParent {parent_number}: \"{parent_name}\"")
-                .wrap_err_with(|| eyre!("Failed to write parent name to message!"),)?;
+                .wrap_err_with(|| eyre!("Failed to write parent name to message!"))?;
             for child in children {
-                let channel = ctx.cache.channel(child.id,).and_then(Channel::guild,);
+                let channel = ctx.cache().channel(child.id).and_then(Channel::guild);
                 let child_number = child.number;
-                let child_name = channel.as_ref().map_or("[Name not found]", |c| c.name(),);
+                let child_name = channel.as_ref().map_or("[Name not found]", |c| c.name());
                 writeln!(message, "\t\tChild {child_number}: \"{child_name}\"")
-                    .wrap_err_with(|| eyre!("Failed to write child name to message!"),)?;
+                    .wrap_err_with(|| eyre!("Failed to write child name to message!"))?;
             }
         }
-        message.push('`',);
+        message.push('`');
         msg.channel_id
-            .say(&ctx.http, message,)
+            .say(&ctx.http(), message)
             .await
-            .wrap_err_with(|| eyre!("Failed to send message!"),)?
+            .wrap_err_with(|| eyre!("Failed to send message!"))?
             .drop();
-        Ok((),)
+        Ok(())
     }
-    .instrument(span,)
+    .instrument(span)
     .await
 }
 
