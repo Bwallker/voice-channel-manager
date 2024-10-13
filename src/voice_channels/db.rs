@@ -31,7 +31,7 @@ use crate::{
 pub(crate) async fn get_template(executor: &PgPool, guild_id: GuildId) -> Result<Option<String>> {
     query!(
         "SELECT channel_template FROM template_channels WHERE guild_id = $1;",
-        guild_id.0 as i64
+        guild_id.get() as i64
     )
     .fetch_optional(executor)
     .await
@@ -49,8 +49,8 @@ pub(crate) async fn set_template(
         "INSERT INTO template_channels (channel_id, guild_id, channel_template, \
          next_child_number) VALUES ($1, $2, $3, 1) ON CONFLICT (channel_id) DO UPDATE SET \
          channel_template = $3;",
-        channel_id.0 as i64,
-        guild_id.0 as i64,
+        channel_id.get() as i64,
+        guild_id.get() as i64,
         template
     )
     .execute(executor)
@@ -70,8 +70,8 @@ pub(crate) async fn delete_template(
         .wrap_err_with(|| eyre!("Failed to start a transaction!"))?;
     let res1 = query!(
         "DELETE FROM template_channels WHERE guild_id = $1 AND channel_id = $2;",
-        guild_id.0 as i64,
-        channel_id.0 as i64
+        guild_id.get() as i64,
+        channel_id.get() as i64
     )
     .execute(&mut *transaction)
     .await
@@ -83,8 +83,8 @@ pub(crate) async fn delete_template(
     assert_eq!(res1.rows_affected(), 1);
     let res2 = query!(
         "DELETE FROM child_channels WHERE guild_id = $1 AND parent_id = $2;",
-        guild_id.0 as i64,
-        channel_id.0 as i64,
+        guild_id.get() as i64,
+        channel_id.get() as i64,
     )
     .execute(executor)
     .await
@@ -115,8 +115,8 @@ pub(crate) async fn register_child(
     let row = query!(
         "UPDATE template_channels SET next_child_number = next_child_number + 1 WHERE channel_id \
          = $1 AND guild_id = $2 RETURNING next_child_number - 1 AS child_number;",
-        parent_id.0 as i64,
-        guild_id.0 as i64
+        parent_id.get() as i64,
+        guild_id.get() as i64
     )
     .fetch_one(&mut *transaction)
     .await
@@ -131,9 +131,9 @@ pub(crate) async fn register_child(
     query!(
         "INSERT INTO child_channels (guild_id, parent_id, child_id, child_number) VALUES ($1, $2, \
          $3, $4) ON CONFLICT (child_id) DO NOTHING;",
-        guild_id.0 as i64,
-        parent_id.0 as i64,
-        child_id.0 as i64,
+        guild_id.get() as i64,
+        parent_id.get() as i64,
+        child_id.get() as i64,
         row.child_number
     )
     .execute(&mut *transaction)
@@ -164,9 +164,9 @@ pub(crate) async fn delete_child(
 ) -> Result<()> {
     query!(
         "DELETE FROM child_channels WHERE guild_id = $1 AND parent_id = $2 AND child_id = $3;",
-        guild_id.0 as i64,
-        parent_id.0 as i64,
-        child_id.0 as i64
+        guild_id.get() as i64,
+        parent_id.get() as i64,
+        child_id.get() as i64
     )
     .execute(executor)
     .await
@@ -184,8 +184,8 @@ pub(crate) async fn change_capacity(
 ) -> Result<()> {
     query!(
         "UPDATE template_channels SET capacity = $3 WHERE guild_id = $1 AND channel_id = $2;",
-        guild_id.0 as i64,
-        channel_id.0 as i64,
+        guild_id.get() as i64,
+        channel_id.get() as i64,
         capacity as i64
     )
     .execute(executor)
@@ -201,8 +201,8 @@ pub(crate) async fn clear_capacity(
 ) -> Result<()> {
     query!(
         "UPDATE template_channels SET capacity = NULL WHERE guild_id = $1 AND channel_id = $2;",
-        guild_id.0 as i64,
-        channel_id.0 as i64
+        guild_id.get() as i64,
+        channel_id.get() as i64
     )
     .execute(executor)
     .await
@@ -287,7 +287,7 @@ pub(crate) async fn get_all_children_of_parent(
             OR child_id = ANY($2)
         );
         "#,
-        guild_id.0 as i64,
+        guild_id.get() as i64,
         channels
     )
     .fetch_all(executor,)
@@ -304,7 +304,7 @@ pub(crate) async fn get_all_children_of_parent(
         return Ok(None);
     };
 
-    let parent_id = ChannelId(parent_row.channel_id as u64);
+    let parent_id = ChannelId::new(parent_row.channel_id as u64);
 
     let template = parent_row.channel_template.clone();
 
@@ -318,7 +318,7 @@ pub(crate) async fn get_all_children_of_parent(
 
     let children = iter
         .filter_map(|row| {
-            let child_id = ChannelId(row.child_id? as u64);
+            let child_id = ChannelId::new(row.child_id? as u64);
 
             let child_number = row.child_number? as u64;
 
@@ -352,7 +352,7 @@ pub(crate) async fn get_all_channels_in_guild(
         LEFT JOIN child_channels ON template_channels.channel_id = child_channels.parent_id
         WHERE template_channels.guild_id = $1;
         "#,
-        guild_id.0 as i64
+        guild_id.get() as i64
     )
     .fetch_all(&mut *transaction,)
     .await
@@ -361,8 +361,8 @@ pub(crate) async fn get_all_channels_in_guild(
     let mut parent_channels = HashMap::default();
 
     for row in res {
-        let parent_id = ChannelId(row.channel_id as u64);
-        let child_id = row.child_id.map(|v| ChannelId(v as u64));
+        let parent_id = ChannelId::new(row.channel_id as u64);
+        let child_id = row.child_id.map(|v| ChannelId::new(v as u64));
         let child_number = row.child_number.map(|v| v as u64);
         let next_child_number = row.next_child_number as u64;
         let template = row.channel_template;
@@ -425,8 +425,8 @@ pub(crate) async fn update_next_child_number(
         END
         WHERE channel_id = $1
     ",
-        parent_id.0 as i64,
-        child_id.0 as i64
+        parent_id.get() as i64,
+        child_id.get() as i64
     )
     .execute(executor)
     .await

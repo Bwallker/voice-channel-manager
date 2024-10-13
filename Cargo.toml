@@ -19,6 +19,7 @@ beta-features = []
 
 [lints.clippy]
 cargo = { level = "warn", priority = -1 }
+multiple-crate-versions = "allow"
 pedantic = { level = "warn", priority = -1 }
 cast-possible-wrap = "allow"
 cast-sign-loss = "allow"

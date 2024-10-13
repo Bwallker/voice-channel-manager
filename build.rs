@@ -7,15 +7,15 @@ fn main() {
     println!("cargo:rerun-if-changed=migrations");
 
     if let Ok(rust_toolchain) = var("RUSTUP_TOOLCHAIN") {
-        if rust_toolchain.starts_with("stable") {
+        if rust_toolchain.contains("stable") {
             // do nothing
-        } else if rust_toolchain.starts_with("nightly") {
+        } else if rust_toolchain.contains("nightly") {
             // enable the 'nightly-features' feature flag
             println!("cargo:rustc-cfg=feature=\"nightly-features\"");
-        } else if rust_toolchain.starts_with("beta") {
+        } else if rust_toolchain.contains("beta") {
             println!("cargo:rustc-cfg=feature=\"beta-features\"");
         } else {
-            panic!("Unexpected value for rustc toolchain")
+            panic!("Unexpected value for rustc toolchain: {rust_toolchain}");
         }
     }
 }
