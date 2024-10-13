@@ -451,8 +451,12 @@ pub(crate) async fn init_next_child_number(executor: &PgPool) -> Result<()> {
             GROUP BY parent_id
         )
         UPDATE template_channels
-        SET next_child_number = (SELECT COALESCE(res, 1) FROM next RIGHT JOIN template_channels ON \
-         parent_id = channel_id)
+        SET next_child_number = 
+        CASE
+            WHEN EXISTS (SELECT * FROM next) THEN (SELECT COALESCE(res, 1) FROM next RIGHT JOIN \
+                        template_channels ON parent_id = channel_id)
+            ELSE 1
+        END
     "
     )
     .execute(executor)
