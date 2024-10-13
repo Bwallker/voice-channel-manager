@@ -24,7 +24,6 @@ use serenity::{
     all::{
         ActivityData,
         ChannelId,
-        ChannelType,
         Guild,
         GuildChannel,
         GuildId,
@@ -64,7 +63,10 @@ use crate::{
         clean_left_guild_from_db,
     },
     get_db_handle,
-    util::{get_value, CacheExt},
+    util::{
+        get_value,
+        CacheExt,
+    },
     voice_channels::{
         self,
         db::Children,
@@ -295,20 +297,14 @@ async fn on_voice_state_update(
     info!("Parent: {:?}, children: {:?}", parent, children);
     if Some(parent.id) == joined_channel_id {
         let parent_channel = ctx.cache.guild_channel(guild_id, parent.id)?;
-
         let mut map = Map::new();
 
         map.insert("type".into(), Value::Number(Number::from(2)))
             .drop();
-        if let ChannelType::Category = parent_channel.kind {
-            map.insert("parent_id".into(), parent.id.get().to_string().into())
+        if let Some(grandparent_id) = parent_channel.parent_id {
+            map.insert("parent_id".into(), grandparent_id.get().to_string().into())
                 .drop();
         }
-        map.insert(
-            "topic".into(),
-            format!("Child channel to {}", parent_channel.id.get()).into(),
-        )
-        .drop();
         map.insert("name".into(), "Child".into()).drop();
         if let Some(cap) = parent.capacity {
             map.insert("user_limit".into(), Value::Number(Number::from(cap)))

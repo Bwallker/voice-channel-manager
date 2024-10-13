@@ -52,7 +52,10 @@ pub(crate) type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub(crate) type HashSet<K> = rustc_hash::FxHashSet<K>;
 
 use dotenvy::dotenv;
-use events::{on_event, on_ready};
+use events::{
+    on_event,
+    on_ready,
+};
 use eyre::{
     eyre,
     Report,
@@ -65,9 +68,16 @@ use poise::{
 };
 use serenity::{
     all::{
-        Context as SerenityContext, CreateAllowedMentions, GatewayIntents, GuildId, Mentionable, UserId, VoiceState
+        Context as SerenityContext,
+        CreateAllowedMentions,
+        GatewayIntents,
+        GuildId,
+        Mentionable,
+        UserId,
+        VoiceState,
     },
-    prelude::TypeMapKey, Client,
+    prelude::TypeMapKey,
+    Client,
 };
 use sqlx::PgPool;
 use tokio::{
@@ -99,10 +109,19 @@ use tracing_subscriber::{
     EnvFilter,
     FmtSubscriber,
 };
-use voice_channels::{commands::{alter_template, change_capacity, clear_capacity, create_channel, list_template_channels}, db::{
-    Children,
-    Parent,
-}};
+use voice_channels::{
+    commands::{
+        alter_template,
+        change_capacity,
+        clear_capacity,
+        create_channel,
+        list_template_channels,
+    },
+    db::{
+        Children,
+        Parent,
+    },
+};
 
 mod db;
 mod events;
@@ -202,18 +221,38 @@ fn main() -> Result<()> {
 
 #[allow(clippy::too_many_lines)]
 async fn on_error(error: FrameworkError<'_>) {
-    if let FrameworkError::Setup { error, framework: _, data_about_bot: _, ctx: _, .. } = error {
-        error!("Setup returned an error: {error}");
+    if let FrameworkError::Setup {
+        error,
+        framework: _,
+        data_about_bot: _,
+        ctx: _,
+        ..
+    } = error
+    {
+        error!("Setup returned an error: {error:?}");
         return;
     }
-    if let FrameworkError::EventHandler { error, ctx: _, event: _, framework: _, .. } = error {
-        error!("Handling event failed: {error}");
+    if let FrameworkError::EventHandler {
+        error,
+        ctx: _,
+        event: _,
+        framework: _,
+        ..
+    } = error
+    {
+        error!("Handling event failed: {error:?}");
         return;
     }
     let channel_id = match error.ctx() {
         | Some(ctx) => ctx.channel_id(),
         | None => {
-            let FrameworkError::UnknownInteraction { interaction, ctx: _, framework: _, .. } = error else {
+            let FrameworkError::UnknownInteraction {
+                interaction,
+                ctx: _,
+                framework: _,
+                ..
+            } = error
+            else {
                 unreachable!(
                     "We've already handled all the errors that can occur that don't contain a \
                      poise context"
@@ -225,7 +264,13 @@ async fn on_error(error: FrameworkError<'_>) {
     let mention = match error.ctx() {
         | Some(ctx) => ctx.author().mention(),
         | None => {
-            let FrameworkError::UnknownInteraction { interaction, ctx: _, framework: _, .. } = error else {
+            let FrameworkError::UnknownInteraction {
+                interaction,
+                ctx: _,
+                framework: _,
+                ..
+            } = error
+            else {
                 unreachable!(
                     "We've already handled all the errors that can occur that don't contain a \
                      poise context"
@@ -237,7 +282,7 @@ async fn on_error(error: FrameworkError<'_>) {
     let http = error.serenity_context().http.clone();
     let to_send = match error {
         | FrameworkError::Command { error, ctx, .. } =>
-            format!("Running command {} failed: {error}", ctx.command().name),
+            format!("Running command {} failed: {error:?}", ctx.command().name),
         | FrameworkError::SubcommandRequired { .. } => unreachable!("We don't use subcommands"),
         | FrameworkError::CommandPanic { payload, ctx, .. } => format!(
             "Running command {} panicked: {}",
@@ -247,16 +292,23 @@ async fn on_error(error: FrameworkError<'_>) {
         | FrameworkError::ArgumentParse {
             error, input, ctx, ..
         } => format!(
-            "Parsing arguments for command {} failed: {error} for input: {}",
+            "Parsing arguments for command {} failed: {error:?} for input: {}",
             ctx.command().name,
             input.as_deref().unwrap_or("<no-argument-text>")
         ),
-        | FrameworkError::CommandStructureMismatch { description: _, ctx: _, .. } => unreachable!(
+        | FrameworkError::CommandStructureMismatch {
+            description: _,
+            ctx: _,
+            ..
+        } => unreachable!(
             "We should get a command structure mismatch since we register all our commands in our \
              ready handler."
         ),
-        | FrameworkError::CooldownHit { remaining_cooldown: _, ctx: _, .. } =>
-            unreachable!("We don't have any cooldowns on our commands."),
+        | FrameworkError::CooldownHit {
+            remaining_cooldown: _,
+            ctx: _,
+            ..
+        } => unreachable!("We don't have any cooldowns on our commands."),
         | FrameworkError::MissingBotPermissions {
             missing_permissions,
             ctx,
@@ -289,15 +341,32 @@ async fn on_error(error: FrameworkError<'_>) {
             ctx.command().name
         ),
         | FrameworkError::CommandCheckFailed { error, ctx, .. } => format!(
-            "Check for running command {} failed: {}",
+            "Check for running command {} failed: {:?}",
             ctx.command().name,
             error.unwrap_or_else(|| eyre!("Check function returned false!")),
         ),
-        | FrameworkError::DynamicPrefix { error: _, ctx: _, msg: _, .. } => unreachable!("We don't use dynamic prefixes"),
-        | FrameworkError::UnknownCommand { ctx: _, msg: _, prefix: _, msg_content: _, framework: _, invocation_data: _, trigger: _, .. } =>
-            unreachable!("We don't use prefix commands so we never encounter unknown commands"),
-        | FrameworkError::UnknownInteraction { interaction, ctx: _, framework: _, .. } =>
-            format!("Unknown interaction: {}", interaction.data.name),
+        | FrameworkError::DynamicPrefix {
+            error: _,
+            ctx: _,
+            msg: _,
+            ..
+        } => unreachable!("We don't use dynamic prefixes"),
+        | FrameworkError::UnknownCommand {
+            ctx: _,
+            msg: _,
+            prefix: _,
+            msg_content: _,
+            framework: _,
+            invocation_data: _,
+            trigger: _,
+            ..
+        } => unreachable!("We don't use prefix commands so we never encounter unknown commands"),
+        | FrameworkError::UnknownInteraction {
+            interaction,
+            ctx: _,
+            framework: _,
+            ..
+        } => format!("Unknown interaction: {}", interaction.data.name),
         | _ => unreachable!("We've handled all of the errors that can occur"),
     };
     channel_id
