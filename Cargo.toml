@@ -62,7 +62,7 @@ futures = "0.3.31"
 if_chain = "1.0.2"
 poise = "0.6.1"
 rustc-hash = "2.0.0"
-serde_json = "1.0.128"
+serde_json = "1.0.132"
 serenity = { version = "0.12.2", features = [
     "builder",
     "cache",
@@ -78,7 +78,7 @@ sqlx = { version = "0.8.2", features = [
     "postgres",
     "runtime-tokio",
 ] }
-tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.41.1", features = ["rt", "rt-multi-thread", "macros"] }
 tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["time", "env-filter"] }
