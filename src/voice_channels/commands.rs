@@ -23,9 +23,9 @@ use tracing::{
 
 use crate::{
     get_db_handle,
+    util::CacheExt,
     Context,
     DropExt,
-    util::CacheExt,
 };
 
 type CommandResult = Result<()>;

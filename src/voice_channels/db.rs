@@ -454,7 +454,7 @@ pub(crate) async fn init_next_child_number(executor: &PgPool) -> Result<()> {
         SET next_child_number = 
         CASE
             WHEN EXISTS (SELECT * FROM next) THEN (SELECT COALESCE(res, 1) FROM next RIGHT JOIN \
-                        template_channels ON parent_id = channel_id)
+         template_channels ON parent_id = channel_id)
             ELSE 1
         END
     "
