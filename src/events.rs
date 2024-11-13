@@ -139,7 +139,7 @@ pub(crate) async fn delete_parent_and_children(
 async fn on_channel_delete(
     ctx: &SerenityContext,
     channel: &GuildChannel,
-    _messages: &Option<Vec<Message>>,
+    _messages: Option<&Vec<Message>>,
 ) -> Result<()> {
     info!("Channel deleted: {}", channel.id);
     let guild_id = channel.guild_id;
@@ -185,7 +185,7 @@ async fn on_channel_delete(
 #[allow(clippy::unused_async)]
 async fn on_channel_update(
     _ctx: &SerenityContext,
-    old: &Option<GuildChannel>,
+    old: Option<&GuildChannel>,
     new: &GuildChannel,
 ) -> Result<()> {
     info!("Updating channel: {}", new.id);
@@ -487,7 +487,7 @@ async fn on_guild_join(ctx: &SerenityContext, guild: &Guild, _is_new: Option<boo
 async fn on_guild_leave(
     ctx: &SerenityContext,
     incomplete: &UnavailableGuild,
-    guild: &Option<Guild>,
+    guild: Option<&Guild>,
 ) -> Result<()> {
     let guild_id = incomplete.id;
     info!(
@@ -636,15 +636,15 @@ pub(crate) async fn on_event(
                     .instrument(trace_span!("Guild join"))
                     .await,
             | FullEvent::GuildDelete { incomplete, full } =>
-                on_guild_leave(ctx, incomplete, full)
+                on_guild_leave(ctx, incomplete, full.as_ref())
                     .instrument(trace_span!("Guild leave"))
                     .await,
             | FullEvent::ChannelUpdate { old, new } =>
-                on_channel_update(ctx, old, new)
+                on_channel_update(ctx, old.as_ref(), new)
                     .instrument(trace_span!("Channel update"))
                     .await,
             | FullEvent::ChannelDelete { channel, messages } =>
-                on_channel_delete(ctx, channel, messages)
+                on_channel_delete(ctx, channel, messages.as_ref())
                     .instrument(trace_span!("Channel delete"))
                     .await,
             | _ => Ok(()),
